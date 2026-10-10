@@ -34,8 +34,19 @@ jobs:
           git commit -m "Auto-fix spotless formatting [skip ci]" || echo "Nada para commitar"
           git push
 
+      # PASSO 1: Decodifica a keystore dos Secrets
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+
+      # PASSO 2: Compila usando a keystore fixa (assembleRelease)
       - name: Build APKs
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleRelease
+        env:
+          KEYSTORE_PATH: release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - name: Collect APKs
         run: |
