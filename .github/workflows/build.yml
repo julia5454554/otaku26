@@ -13,6 +13,14 @@ jobs:
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout repo branch
+        uses: actions/checkout@v4
+        with:
+          ref: repo
+          path: repo-branch
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -23,25 +31,57 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Detect changed extensions
+        id: detect
+        run: |
+          BEFORE="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "modules=ALL" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          FILES=$(git diff --name-only "$BEFORE" "${{ github.sha }}")
+          if echo "$FILES" | grep -qE '^(common|lib|lib-multisrc|core|compiler|gradle|build-logic)/|^(build.gradle.kts|settings.gradle.kts|gradle.properties)$'; then
+            echo "modules=ALL" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          MODS=""
+          for m in $(echo "$FILES" | grep -E '^src/[^/]+/[^/]+/' | cut -d/ -f1-3 | sort -u); do
+            [ -d "$m" ] && MODS="$MODS $m"
+          done
+          echo "modules=$(echo $MODS)" >> $GITHUB_OUTPUT
+          echo "Módulos alterados: $MODS"
+
       - name: Fix Formatting (Spotless)
+        if: steps.detect.outputs.modules != ''
         run: ./gradlew spotlessApply
 
       - name: Commit Formatting Fixes
+        if: steps.detect.outputs.modules != ''
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
+          git add . ':!repo-branch'
           git commit -m "Auto-fix spotless formatting [skip ci]" || echo "Nada para commitar"
           git push
 
-      # PASSO 1: Decodifica a keystore dos Secrets
       - name: Decode Keystore
+        if: steps.detect.outputs.modules != ''
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
 
-      # PASSO 2: Compila usando a keystore fixa (assembleRelease)
       - name: Build APKs
-        run: ./gradlew assembleRelease
+        if: steps.detect.outputs.modules != ''
+        run: |
+          MODS="${{ steps.detect.outputs.modules }}"
+          if [ "$MODS" = "ALL" ]; then
+            ./gradlew assembleRelease
+          else
+            TASKS=""
+            for m in $MODS; do
+              TASKS="$TASKS :$(echo $m | tr '/' ':'):assembleRelease"
+            done
+            ./gradlew $TASKS
+          fi
         env:
           KEYSTORE_PATH: release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -49,11 +89,18 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - name: Collect APKs
+        if: steps.detect.outputs.modules != ''
         run: |
-          mkdir -p apk
-          find . -name "*.apk" -exec cp {} apk/ \;
+          mkdir -p repo-branch/apk
+          for f in $(find . -name "*.apk" -not -path "./repo-branch/*"); do
+            base=$(basename "$f")
+            prefix=$(echo "$base" | sed -E 's/-v[0-9].*//')
+            rm -f repo-branch/apk/"$prefix"-v*.apk
+            cp "$f" repo-branch/apk/
+          done
 
       - name: Generate index.min.json
+        if: steps.detect.outputs.modules != ''
         run: |
           cat << 'EOF' > generate_index.py
           import glob, json, os, re, subprocess
@@ -61,7 +108,7 @@ jobs:
           aapt = sorted(glob.glob(os.environ["ANDROID_HOME"] + "/build-tools/*/aapt"))[-1]
           out = []
 
-          for apk in sorted(glob.glob("apk/*.apk")):
+          for apk in sorted(glob.glob("repo-branch/apk/*.apk")):
               info = subprocess.check_output([aapt, "dump", "badging", apk], text=True)
               pkg = re.search(r"package: name='([^']+)'", info).group(1)
               code = int(re.search(r"versionCode='(\d+)'", info).group(1))
@@ -80,23 +127,29 @@ jobs:
                   "sources": [],
               })
 
-          with open("index.min.json", "w") as f:
+          with open("repo-branch/index.min.json", "w") as f:
               json.dump(out, f, separators=(",", ":"))
           EOF
           python generate_index.py
 
+      # PASSO CORRIGIDO: Usando apksigner em vez de keytool
       - name: Generate repo.json
+        if: steps.detect.outputs.modules != ''
         run: |
-          APK=$(ls apk/*.apk | head -n1)
-          FP=$(keytool -printcert -jarfile "$APK" | grep 'SHA256:' | head -1 | awk '{print $2}' | tr -d ':' | tr 'A-F' 'a-f')
-          echo "{\"meta\":{\"name\":\"Otaku26\",\"shortName\":\"Otaku26\",\"website\":\"https://github.com/julia5454554/otaku26\",\"signingKeyFingerprint\":\"$FP\"}}" > repo.json
-          cat repo.json
+          APK=$(ls repo-branch/apk/*.apk | head -n1)
+          APKSIGNER=$(ls $ANDROID_HOME/build-tools/*/apksigner | sort -V | tail -1)
+          $APKSIGNER verify --print-certs "$APK"
+          FP=$($APKSIGNER verify --print-certs "$APK" | grep 'certificate SHA-256 digest' | head -1 | awk '{print $NF}')
+          [ -n "$FP" ] || { echo "Fingerprint vazio: APK sem assinatura"; exit 1; }
+          echo "{\"meta\":{\"name\":\"Otaku26\",\"shortName\":\"Otaku26\",\"website\":\"https://github.com/julia5454554/otaku26\",\"signingKeyFingerprint\":\"$FP\"}}" > repo-branch/repo.json
+          cat repo-branch/repo.json
 
       - name: Push to repo branch
+        if: steps.detect.outputs.modules != ''
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b repo
+          cd repo-branch
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -f apk/ index.min.json repo.json
-          git commit -m "Auto-generating index.min.json and repo.json [skip ci]" || echo "Nada para commitar"
-          git push -f origin repo
+          git commit -m "Update extensions [skip ci]" || echo "Nada para commitar"
+          git push origin repo
