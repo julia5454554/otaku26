@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # Permite que o robô faça o push de volta para o repositório
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
@@ -22,6 +22,19 @@ jobs:
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+
+      # NOVO PASSO: Corrigir formatação automaticamente
+      - name: Fix Formatting (Spotless)
+        run: ./gradlew spotlessApply
+
+      # NOVO PASSO: Salvar as correções de formatação no repositório
+      - name: Commit Formatting Fixes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Auto-fix spotless formatting [skip ci]" || echo "Nada para commitar"
+          git push
 
       - name: Build APKs
         run: ./gradlew assembleDebug
