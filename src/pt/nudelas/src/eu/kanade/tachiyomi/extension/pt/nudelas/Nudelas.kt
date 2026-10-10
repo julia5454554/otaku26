@@ -27,30 +27,45 @@ class Nudelas(
 
     override val name = "Nudelas"
     override val baseUrl = "https://www.nudelas.com"
-
-    // Só uma aba ("Populares" mostra o feed cronológico)
     override val supportsLatest = false
 
+    // Ritmo de navegação humana — evita bloqueio de IP
     override val client: OkHttpClient = network.client.newBuilder()
-        .rateLimit(2, 1.seconds)
+        .rateLimit(1, 2.seconds)
         .build()
 
     override fun headersBuilder(): Headers.Builder = Headers.Builder()
         .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
+        .add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+        .add("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8")
         .add("Referer", "$baseUrl/")
+        .add("Sec-Fetch-Dest", "document")
+        .add("Sec-Fetch-Mode", "navigate")
+        .add("Sec-Fetch-Site", "same-origin")
+        .add("Upgrade-Insecure-Requests", "1")
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.ENGLISH)
 
-    // ---------- LISTAGEM ----------
+    // ============================================================
+    // LISTAGEM — tema novo (Tailwind + a.gallery-card)
+    // ============================================================
     private fun Element.toSManga(): SManga? {
-        // Pula publieditoriais (só texto, sem galeria)
-        if (classNames().contains("category-publieditorial")) return null
+        // Filtra publieditorial pela flag do card
+        val flagText = selectFirst(".card-flag")?.text().orEmpty()
+        if (flagText.contains("publi", ignoreCase = true)) return null
 
-        val a = selectFirst("a.image-link") ?: return null
-        val href = a.absUrl("href").takeIf { it.isNotEmpty() } ?: return null
-        val title = selectFirst("h2.post-title-alt a, h2.is-title a")?.text()?.trim()
-            ?.takeIf { it.isNotEmpty() } ?: return null
-        val thumb = pickThumb(selectFirst("span.wp-post-image"))
+        val href = absUrl("href").takeIf { it.isNotEmpty() && it.startsWith(baseUrl) } ?: return null
+
+        val title = selectFirst("h3, h2, .card-title")
+            ?.text()?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: return null
+
+        val img = selectFirst("img")
+        val thumb = img?.let {
+            it.absUrl("src").ifBlank { it.absUrl("data-src") }
+        }.orEmpty()
+
         return SManga.create().apply {
             this.title = title
             this.thumbnail_url = thumb
@@ -58,87 +73,88 @@ class Nudelas(
         }
     }
 
-    private fun pickThumb(span: Element?): String {
-        if (span == null) return ""
-        // data-bgset tem formato srcset: "url 768w, url 800w, ..."
-        val bgset = span.attr("data-bgset")
-        if (bgset.isNotBlank()) {
-            val best = bgset.split(",")
-                .mapNotNull { entry ->
-                    val parts = entry.trim().split(Regex("\\s+"))
-                    if (parts.size < 2) return@mapNotNull null
-                    val w = parts[1].removeSuffix("w").toIntOrNull() ?: return@mapNotNull null
-                    parts[0] to w
-                }
-                .maxByOrNull { it.second }
-                ?.first
-            if (best != null) return best
-        }
-        // data-bgsrc é uma única URL
-        val bgsrc = span.attr("data-bgsrc")
-        if (bgsrc.isNotBlank()) return bgsrc
-        // fallback: background-image inline
-        val style = span.attr("style")
-        val match = Regex("background-image:\\s*url\\(['\"]?([^'\")]+)['\"]?\\)").find(style)
-        return match?.groupValues?.get(1).orEmpty()
-    }
-
     private fun parseListPage(response: Response): MangasPage {
         val document = response.asJsoup()
-        val mangas = document.select("article.grid-post").mapNotNull { it.toSManga() }
-        val hasNext = document.selectFirst("nav.main-pagination span.label-next a[href]") != null
+        val mangas = document.select("a.gallery-card").mapNotNull { it.toSManga() }
+
+        val hasNext = document.selectFirst(
+            "a.next.page-numbers[href], " +
+                "nav.pagination a.next[href], " +
+                "link[rel=next], " +
+                "a[rel=next][href]",
+        ) != null
+
         return MangasPage(mangas, hasNext)
     }
 
-    override fun popularMangaRequest(page: Int): Request = GET("$baseUrl/page/$page/", headers)
+    // /page/1/ dá 301 pra home → usa home direto na página 1
+    override fun popularMangaRequest(page: Int): Request {
+        val url = if (page == 1) "$baseUrl/" else "$baseUrl/page/$page/"
+        return GET(url, headers)
+    }
 
     override fun popularMangaParse(response: Response): MangasPage = parseListPage(response)
 
-    // Obrigatórios pela HttpSource, mas NÃO são usados (supportsLatest = false)
-    override fun latestUpdatesRequest(page: Int): Request = GET("$baseUrl/page/$page/", headers)
+    override fun latestUpdatesRequest(page: Int): Request = popularMangaRequest(page)
+    override fun latestUpdatesParse(response: Response): MangasPage = popularMangaParse(response)
 
-    override fun latestUpdatesParse(response: Response): MangasPage = parseListPage(response)
-
-    // ---------- BUSCA ----------
+    // ============================================================
+    // BUSCA
+    // ============================================================
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         val encoded = query.replace(" ", "+")
-        val url = if (page == 1) {
-            "$baseUrl/?s=$encoded"
-        } else {
-            "$baseUrl/page/$page/?s=$encoded"
-        }
+        val url = if (page == 1) "$baseUrl/?s=$encoded" else "$baseUrl/page/$page/?s=$encoded"
         return GET(url, headers)
     }
 
     override fun searchMangaParse(response: Response): MangasPage = parseListPage(response)
 
-    // ---------- DETALHES ----------
+    // ============================================================
+    // DETALHES
+    // ============================================================
     override fun mangaDetailsParse(response: Response): SManga {
         val document = response.asJsoup()
-        // Apenas as categorias reais (poucas), ignorando as tags SEO infinitas
-        val genres = document.select("span.post-cat a.category")
+
+        // Só categorias reais — ignora a navegação inteira do tema
+        val genres = document.select(
+            "span.post-cat a.category, " +
+                "a[rel=category], " +
+                ".cat-links a, " +
+                "article .card-flag span",
+        )
+            .map { it.text().trim() }
+            .filter { it.isNotEmpty() && !it.contains("publi", ignoreCase = true) }
+            .distinct()
+            .take(6)
+
+        val description = document.select(
+            "div.post-content.description > p, " +
+                "div.entry-content p, " +
+                "article p",
+        )
             .map { it.text().trim() }
             .filter { it.isNotEmpty() }
-            .distinct()
+            .take(3)
+            .joinToString("\n\n")
 
         return SManga.create().apply {
-            title = document.selectFirst("h1.post-title-alt, h1.post-title")?.text()?.trim().orEmpty()
+            title = document.selectFirst("h1")?.text()?.trim().orEmpty()
             thumbnail_url = document.selectFirst("meta[property=og:image]")?.attr("content").orEmpty()
-            description = document.select("div.post-content.description > p")
-                .take(3)
-                .joinToString("\n\n") { it.text().trim() }
-                .ifBlank { document.selectFirst("meta[property=og:description]")?.attr("content").orEmpty() }
+            this.description = description
             genre = genres.joinToString(", ")
         }
     }
 
-    // ---------- CAPÍTULOS ----------
+    // ============================================================
+    // CAPÍTULOS
+    // ============================================================
     override fun chapterListParse(response: Response): List<SChapter> {
         val doc = response.asJsoup()
         val dateText = doc.selectFirst("meta[property=article:published_time]")?.attr("content")
         val date = dateText?.take(19)?.let {
             runCatching { dateFormat.parse(it)?.time }.getOrNull()
         } ?: 0L
+
         return listOf(
             SChapter.create().apply {
                 name = "Gallery"
@@ -148,18 +164,39 @@ class Nudelas(
         )
     }
 
-    // ---------- PÁGINAS ----------
+    // ============================================================
+    // PÁGINAS — filtra por slug do post (evita banner e relacionados)
+    // ============================================================
     override fun pageListParse(response: Response): List<Page> {
         val galleryUrl = response.request.url.toString()
         val document = response.asJsoup()
-        // Só galerias WordPress (figure.gallery-item). Publieditoriais são filtrados na listagem.
-        return document.select("figure.gallery-item").mapIndexedNotNull { i, figure ->
-            val a = figure.selectFirst("div.gallery-icon > a") ?: return@mapIndexedNotNull null
-            val href = a.absUrl("href")
-            // Filtra anúncios (ex: clothoff.app) — só aceitar uploads do próprio site
-            if (href.isEmpty() || !href.contains("/wp-content/uploads/")) return@mapIndexedNotNull null
-            Page(i, url = galleryUrl, imageUrl = href)
+
+        // Slug atual: /ketty-moon-pelada-bem-gostosinha-em-fotos-ousadas/
+        val slug = response.request.url.pathSegments
+            .lastOrNull { it.isNotBlank() }
+            ?.takeIf { it.isNotEmpty() }
+            ?: return emptyList()
+
+        val seen = mutableSetOf<String>()
+        val ordered = mutableListOf<String>()
+
+        fun addUrl(raw: String) {
+            if (raw.isBlank()) return
+            if (!raw.contains("/wp-content/uploads/")) return
+            if (!raw.contains(slug, ignoreCase = true)) return
+            // Dedupe: tira .webp e sufixo -768x1024
+            val key = raw.substringAfterLast("/")
+                .removeSuffix(".webp")
+                .replace(Regex("-\\d+x\\d+(?=\\.)"), "")
+            if (seen.add(key)) ordered.add(raw)
         }
+
+        // 1) Preferência: <a href> (imagem full-size, costuma não ter .webp)
+        document.select("a[href*=/wp-content/uploads/]").forEach { addUrl(it.absUrl("href")) }
+        // 2) Fallback: <img src>
+        document.select("img[src*=/wp-content/uploads/]").forEach { addUrl(it.absUrl("src")) }
+
+        return ordered.mapIndexed { i, url -> Page(i, url = galleryUrl, imageUrl = url) }
     }
 
     override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
@@ -167,6 +204,10 @@ class Nudelas(
     override fun imageRequest(page: Page): Request {
         val newHeaders = headersBuilder()
             .set("Referer", page.url)
+            .set("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
+            .set("Sec-Fetch-Dest", "image")
+            .set("Sec-Fetch-Mode", "no-cors")
+            .set("Sec-Fetch-Site", "same-origin")
             .build()
         return GET(page.imageUrl!!, newHeaders)
     }
