@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Permite que o robô faça o push de volta para o repositório
+      contents: write
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
@@ -23,11 +23,9 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # NOVO PASSO: Corrigir formatação automaticamente
       - name: Fix Formatting (Spotless)
         run: ./gradlew spotlessApply
 
-      # NOVO PASSO: Salvar as correções de formatação no repositório
       - name: Commit Formatting Fixes
         run: |
           git config --global user.name "github-actions[bot]"
@@ -44,8 +42,10 @@ jobs:
           mkdir -p apk
           find . -name "*.apk" -exec cp {} apk/ \;
 
+      # NOVO PASSO: Instalar as dependências do Python antes de gerar o index.pb
       - name: Generate index.pb
         run: |
+          pip install protobuf requests
           curl -O https://raw.githubusercontent.com/keiyoushi/extensions-source/main/.github/scripts/publish-repo.py
           curl -O https://raw.githubusercontent.com/keiyoushi/extensions-source/main/.github/scripts/index_pb2.py
           curl -O https://raw.githubusercontent.com/keiyoushi/extensions-source/main/.github/scripts/index.proto
