@@ -8,7 +8,6 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import eu.kanade.tachiyomi.source.online.HttpSource
-import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.annotation.Source
 import keiyoushi.network.rateLimit
 import okhttp3.Headers
@@ -84,7 +83,7 @@ class QuadrinhosEroticosBlog(
 
             // Filtro de anúncio: precisa ter pelo menos 2 imagens no conteúdo
             val images = doc.select("img")
-            if (images.size < 2) continue  // se tiver menos de 2 imagens, provavelmente é anúncio
+            if (images.size < 2) continue // se tiver menos de 2 imagens, provavelmente é anúncio
 
             val apiUrl = "/wp-json/wp/v2/posts/$id"
             val thumb = post.optString("jetpack_featured_media_url", "").ifEmpty {
@@ -150,7 +149,7 @@ class QuadrinhosEroticosBlog(
                 name = "Capítulo Único"
                 chapter_number = 1f
                 setUrlWithoutDomain(basePath)
-            }
+            },
         )
     }
 

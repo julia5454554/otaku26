@@ -202,8 +202,7 @@ class MeuHentai(
     // pois pageListParse é totalmente sobrescrito)
     // =========================
 
-    override fun imageUrlParse(response: Response): String =
-        throw UnsupportedOperationException()
+    override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
 
     // =========================
     // imageRequest com Referer correto

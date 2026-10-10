@@ -71,7 +71,8 @@ class HqErotico(
             if (href.isEmpty() ||
                 href.contains("/page/") ||
                 !href.contains("hqerotico.com") ||
-                item.selectFirst("span.thumb-ads") != null) {
+                item.selectFirst("span.thumb-ads") != null
+            ) {
                 return@mapNotNull null
             }
 
@@ -89,7 +90,7 @@ class HqErotico(
         }.distinctBy { it.url }
 
         val hasNextPage = document.selectFirst(
-            "a.next, a.next.page-numbers, .pagination a:contains(›), ul.paginacao li.next"
+            "a.next, a.next.page-numbers, .pagination a:contains(›), ul.paginacao li.next",
         ) != null
 
         return MangasPage(mangas, hasNextPage)
@@ -136,7 +137,7 @@ class HqErotico(
                 name = "Capítulo Único"
                 chapter_number = 1f
                 setUrlWithoutDomain(basePath)
-            }
+            },
         )
     }
 
@@ -146,14 +147,14 @@ class HqErotico(
         val currentUrl = response.request.url.toString()
 
         val selectors = listOf(
-            "ul.post-fotos img",          // principal (padrão dos sites da rede)
-            "div.listaImagens img",       // fallback
-            "div.post-box img",           // fallback
-            "span.aneSliderImagem img",   // fallback
-            "div.foto img",               // fallback
-            "article img",                // fallback
-            ".entry-content img",         // fallback
-            "img"                         // último recurso
+            "ul.post-fotos img", // principal (padrão dos sites da rede)
+            "div.listaImagens img", // fallback
+            "div.post-box img", // fallback
+            "span.aneSliderImagem img", // fallback
+            "div.foto img", // fallback
+            "article img", // fallback
+            ".entry-content img", // fallback
+            "img", // último recurso
         )
 
         var images = emptyList<Element>()

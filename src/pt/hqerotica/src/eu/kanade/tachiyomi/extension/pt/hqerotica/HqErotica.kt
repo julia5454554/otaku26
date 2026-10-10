@@ -82,7 +82,7 @@ class HqErotica(
         }.distinctBy { it.url }
 
         val hasNextPage = document.selectFirst(
-            "a.next, a.next.page-numbers, .pagination a:contains(›), ul.paginacao li.next"
+            "a.next, a.next.page-numbers, .pagination a:contains(›), ul.paginacao li.next",
         ) != null
 
         return MangasPage(mangas, hasNextPage)
@@ -129,7 +129,7 @@ class HqErotica(
                 name = "Capítulo Único"
                 chapter_number = 1f
                 setUrlWithoutDomain(basePath)
-            }
+            },
         )
     }
 
@@ -140,14 +140,14 @@ class HqErotica(
 
         // Seletores para capturar as imagens do capítulo
         val selectors = listOf(
-            "ul.post-fotos img",          // principal (estrutura real)
-            "div.listaImagens img",       // fallback
-            "div.post-box img",           // fallback
-            "span.aneSliderImagem img",   // fallback
-            "div.foto img",               // fallback
-            "article img",                // fallback
-            ".entry-content img",         // fallback
-            "img"                         // último recurso
+            "ul.post-fotos img", // principal (estrutura real)
+            "div.listaImagens img", // fallback
+            "div.post-box img", // fallback
+            "span.aneSliderImagem img", // fallback
+            "div.foto img", // fallback
+            "article img", // fallback
+            ".entry-content img", // fallback
+            "img", // último recurso
         )
 
         var images = emptyList<Element>()
