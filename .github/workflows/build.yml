@@ -78,7 +78,7 @@ jobs:
         run: |
           APK=$(ls apk/*.apk | head -n1)
           FP=$(keytool -printcert -jarfile "$APK" | grep 'SHA256:' | head -1 | awk '{print $2}' | tr -d ':' | tr 'A-F' 'a-f')
-          echo "{\"meta\":{\"name\":\"Otaku26\",\"shortName\":\"Otaku26\",\"website\":\"https://github.com/julia54545454/otaku26\",\"signingKeyFingerprint\":\"$FP\"}}" > repo.json
+          echo "{\"meta\":{\"name\":\"Otaku26\",\"shortName\":\"Otaku26\",\"website\":\"https://github.com/julia5454554/otaku26\",\"signingKeyFingerprint\":\"$FP\"}}" > repo.json
           cat repo.json
 
       - name: Push to repo branch
