@@ -56,8 +56,7 @@ jobs:
               code = int(re.search(r"versionCode='(\d+)'", info).group(1))
               ver = re.search(r"versionName='([^']+)'", info).group(1)
               label = re.search(r"application-label:'([^']+)'", info).group(1)
-              nsfw = re.search(r"extension\.nsfw' value='(\d)'", info)
-              # nome do arquivo: tachiyomi-pt.nome-v1.4.1.apk
+              nsfw = re.search(r"extension\.nsfw' value='(?:\(type [^)]*\))?(?:0x)?(\d)'", info)
               lang = os.path.basename(apk).split("-")[1].split(".")[0]
               out.append({
                   "name": label,
@@ -75,11 +74,18 @@ jobs:
           EOF
           python generate_index.py
 
+      - name: Generate repo.json
+        run: |
+          APK=$(ls apk/*.apk | head -n1)
+          FP=$(keytool -printcert -jarfile "$APK" | grep 'SHA256:' | head -1 | awk '{print $2}' | tr -d ':' | tr 'A-F' 'a-f')
+          echo "{\"meta\":{\"name\":\"Otaku26\",\"shortName\":\"Otaku26\",\"website\":\"https://github.com/julia54545454/otaku26\",\"signingKeyFingerprint\":\"$FP\"}}" > repo.json
+          cat repo.json
+
       - name: Push to repo branch
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b repo
-          git add -f apk/ index.min.json
-          git commit -m "Auto-generating index.min.json [skip ci]" || echo "Nada para commitar"
+          git add -f apk/ index.min.json repo.json
+          git commit -m "Auto-generating index.min.json and repo.json [skip ci]" || echo "Nada para commitar"
           git push -f origin repo
