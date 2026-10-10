@@ -1,0 +1,49 @@
+name: Build and Publish Extensions
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build APKs
+        run: ./gradlew assembleDebug
+
+      - name: Collect APKs
+        run: |
+          mkdir -p apk
+          find . -name "*.apk" -exec cp {} apk/ \;
+
+      - name: Generate index.pb
+        run: |
+          curl -O https://raw.githubusercontent.com/keiyoushi/extensions-source/main/.github/scripts/publish-repo.py
+          curl -O https://raw.githubusercontent.com/keiyoushi/extensions-source/main/.github/scripts/index_pb2.py
+          curl -O https://raw.githubusercontent.com/keiyoushi/extensions-source/main/.github/scripts/index.proto
+          curl -O https://raw.githubusercontent.com/keiyoushi/extensions-source/main/.github/scripts/github_utils.py
+          python publish-repo.py "[]" "${{ github.sha }}"
+
+      - name: Push to repo branch
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b repo
+          git add apk/ index.pb
+          git commit -m "Auto-generating index.pb [skip ci]" || echo "Nada para commitar"
+          git push -f origin repo
