@@ -42,20 +42,45 @@ jobs:
           mkdir -p apk
           find . -name "*.apk" -exec cp {} apk/ \;
 
-      - name: Generate index.pb
+      # NOVO PASSO: Cria e executa o script para gerar o index.min.json
+      - name: Generate index.min.json
         run: |
-          pip install protobuf requests
-          curl -O https://raw.githubusercontent.com/keiyoushi/extensions-source/main/.github/scripts/publish-repo.py
-          curl -O https://raw.githubusercontent.com/keiyoushi/extensions-source/main/.github/scripts/index_pb2.py
-          curl -O https://raw.githubusercontent.com/keiyoushi/extensions-source/main/.github/scripts/index.proto
-          curl -O https://raw.githubusercontent.com/keiyoushi/extensions-source/main/.github/scripts/github_utils.py
-          python publish-repo.py "[]" "${{ github.sha }}" "true"
+          cat << 'EOF' > generate_index.py
+          import glob, json, os, re, subprocess
+
+          aapt = sorted(glob.glob(os.environ["ANDROID_HOME"] + "/build-tools/*/aapt"))[-1]
+          out = []
+
+          for apk in sorted(glob.glob("apk/*.apk")):
+              info = subprocess.check_output([aapt, "dump", "badging", apk], text=True)
+              pkg = re.search(r"package: name='([^']+)'", info).group(1)
+              code = int(re.search(r"versionCode='(\d+)'", info).group(1))
+              ver = re.search(r"versionName='([^']+)'", info).group(1)
+              label = re.search(r"application-label:'([^']+)'", info).group(1)
+              nsfw = re.search(r"extension\.nsfw' value='(\d)'", info)
+              # nome do arquivo: tachiyomi-pt.nome-v1.4.1.apk
+              lang = os.path.basename(apk).split("-")[1].split(".")[0]
+              out.append({
+                  "name": label,
+                  "pkg": pkg,
+                  "apk": os.path.basename(apk),
+                  "lang": lang,
+                  "code": code,
+                  "version": ver,
+                  "nsfw": int(nsfw.group(1)) if nsfw else 0,
+                  "sources": [],
+              })
+
+          with open("index.min.json", "w") as f:
+              json.dump(out, f, separators=(",", ":"))
+          EOF
+          python generate_index.py
 
       - name: Push to repo branch
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b repo
-          git add apk/ index.pb
-          git commit -m "Auto-generating index.pb [skip ci]" || echo "Nada para commitar"
+          git add apk/ index.min.json
+          git commit -m "Auto-generating index.min.json [skip ci]" || echo "Nada para commitar"
           git push -f origin repo
