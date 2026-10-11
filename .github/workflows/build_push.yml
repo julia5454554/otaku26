@@ -112,6 +112,8 @@ jobs:
       needs.prepare.outputs.delete != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    permissions:
+      contents: write
     steps:
       - name: Download APK artifacts
         if: needs.build.result == 'success'
@@ -130,7 +132,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: julia5454554/otaku26
-          token: ${{ secrets.SYNC_PAT }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           ref: repo
           path: repo
           persist-credentials: true
@@ -138,7 +140,7 @@ jobs:
       - name: Publish and deploy repo
         env:
           DELETE: ${{ needs.prepare.outputs.delete }}
-          GH_TOKEN: ${{ secrets.SYNC_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd repo
           pip install protobuf
