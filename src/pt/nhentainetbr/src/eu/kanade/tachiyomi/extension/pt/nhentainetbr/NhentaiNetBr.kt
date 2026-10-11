@@ -34,17 +34,14 @@ abstract class NhentaiNetBr : KeiSource() {
 
     /**
      * Filtro de vídeo/live-action confirmado via curl:
-     * URLs de vídeo terminam em `-live-action` (ex:
-     * /a-bela-e-a-fera-2-a-gyaru-e-o-otaku-live-action/).
-     * Também pega por garantia: qualquer "/live-action" ou "/jav".
+     * URLs reais do site: /a-bela-e-a-fera-2-a-gyaru-e-o-otaku-live-action/
+     *                    /parodia/live-action/
+     * Basta conter "live-action" (case-insensitive) OU "/jav/".
      */
-    private val videoUrlRegex = Regex(
-        "(?i)(-live-action/?$|/live-action/|/jav/)",
-    )
+    private val videoUrlRegex = Regex("(?i)(live-action|/jav/)")
 
     /**
      * Páginas que NÃO são conteúdo (navegação, cadastro, etc.).
-     * Aparecem no grep mas nunca viram cards de mangá — belt and suspenders.
      */
     private val nonContentPaths = setOf(
         "cadastro", "contato", "entrar", "registrar", "login",
@@ -119,7 +116,8 @@ abstract class NhentaiNetBr : KeiSource() {
         return MangasPage(mangas, hasNext)
     }
 
-    override suspend fun getPopularManga(page: Int) = parseListPage(client.get("$baseUrl/ultimos/page/$page/").asJsoup())
+    override suspend fun getPopularManga(page: Int) =
+        parseListPage(client.get("$baseUrl/ultimos/page/$page/").asJsoup())
 
     override suspend fun getLatestUpdates(page: Int) = getPopularManga(page)
 
@@ -155,7 +153,7 @@ abstract class NhentaiNetBr : KeiSource() {
     ): SMangaUpdate {
         val document = client.get(getMangaUrl(manga)).asJsoup()
 
-        // === CHECAGEM VÍDEO: se tem "Áudio:" ou "Legenda:" → live action
+        // === CHECAGEM VÍDEO (rede de segurança) ===
         val bodyText = document.body()?.text().orEmpty()
         val isVideo = Regex("(?im)^(Áudio|Audio|Legenda)\\s*:", RegexOption.MULTILINE)
             .containsMatchIn(bodyText) ||
@@ -275,7 +273,10 @@ abstract class NhentaiNetBr : KeiSource() {
     }
 
     // ============================================================
-    // PÁGINAS — img[style*=height] dentro do painel #galeria-N
+    // PÁGINAS — imgs dentro do painel #galeria-N
+    // FIX: o site REMOVEU o style="height:auto" inline.
+    // Marcador antigo (img[style*=height]) não funciona mais.
+    // Agora: pega todas as <img> dentro do painel e filtra por URL.
     // ============================================================
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val rawUrl = chapter.url.substringBefore("#")
@@ -285,6 +286,7 @@ abstract class NhentaiNetBr : KeiSource() {
         val pageUrl = if (rawUrl.startsWith("http")) rawUrl else "$baseUrl$rawUrl"
         val document = client.get(pageUrl).asJsoup()
 
+        // Escopo: painel específico #galeria-N OU a página inteira
         val scope: Element = if (dataId != null) {
             document.selectFirst("div.galeriaConteudo#galeria-$dataId")
                 ?: document.selectFirst("div[id=galeria-$dataId]")
@@ -293,14 +295,19 @@ abstract class NhentaiNetBr : KeiSource() {
             document
         }
 
-        val images = scope.select("img[style*=height]").mapNotNull { img ->
+        // Pega TODAS as <img> dentro do escopo e filtra por URL válida
+        val images = scope.select("img").mapNotNull { img ->
             val src = img.absUrl("src").ifBlank { img.absUrl("data-src") }
             if (src.isBlank()) return@mapNotNull null
+            // Só imagens de conteúdo real
             if (!src.contains("/wp-content/uploads/")) return@mapNotNull null
+            // Exclui logos / marcas d'água
             if (src.contains("Logo", ignoreCase = true)) return@mapNotNull null
             if (src.contains("mundohentaioficial", ignoreCase = true)) return@mapNotNull null
+            // Exclui thumbs de relacionados (têm -NNNxNNN no fim)
+            if (Regex("-\\d+x\\d+(?=\\.(webp|jpg|jpeg|png))").containsMatchIn(src)) return@mapNotNull null
             src
-        }
+        }.distinct() // evita duplicatas se data-src == src
 
         return images.mapIndexed { i, url -> Page(i, url = pageUrl, imageUrl = url) }
     }
@@ -308,14 +315,16 @@ abstract class NhentaiNetBr : KeiSource() {
     // ============================================================
     // IMAGE REQUEST — usa okhttp puro (KeiSource 1.6 não expõe GET())
     // ============================================================
-    override fun imageRequest(page: Page): Request = Request.Builder()
-        .url(page.imageUrl!!)
-        .header("Referer", page.url)
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
-        .header("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
-        .header("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8")
-        .header("Sec-Fetch-Dest", "image")
-        .header("Sec-Fetch-Mode", "no-cors")
-        .header("Sec-Fetch-Site", "same-origin")
-        .build()
+    override fun imageRequest(page: Page): Request {
+        return Request.Builder()
+            .url(page.imageUrl!!)
+            .header("Referer", page.url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
+            .header("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
+            .header("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8")
+            .header("Sec-Fetch-Dest", "image")
+            .header("Sec-Fetch-Mode", "no-cors")
+            .header("Sec-Fetch-Site", "same-origin")
+            .build()
+    }
 }
