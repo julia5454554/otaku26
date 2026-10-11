@@ -7,7 +7,6 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
-import keiyoushi.network.GET
 import keiyoushi.network.get
 import keiyoushi.network.rateLimit
 import keiyoushi.source.KeiSource
@@ -26,7 +25,7 @@ abstract class NhentaiNetBr : KeiSource() {
 
     override val supportsLatest = true
 
-    // Rate limit: 1 req / 2 s (evita bloqueio de IP, conforme mapeado)
+    // Rate limit: 1 req / 2 s (evita bloqueio de IP)
     override fun OkHttpClient.Builder.configureClient() = rateLimit(1, 2.seconds)
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.ENGLISH)
@@ -75,7 +74,8 @@ abstract class NhentaiNetBr : KeiSource() {
         return MangasPage(mangas, hasNext)
     }
 
-    override suspend fun getPopularManga(page: Int) = parseListPage(client.get("$baseUrl/ultimos/page/$page/").asJsoup())
+    override suspend fun getPopularManga(page: Int) =
+        parseListPage(client.get("$baseUrl/ultimos/page/$page/").asJsoup())
 
     override suspend fun getLatestUpdates(page: Int) = getPopularManga(page)
 
@@ -134,7 +134,7 @@ abstract class NhentaiNetBr : KeiSource() {
             listOf(
                 SChapter.create().apply {
                     name = "Capítulo 1"
-                    url = manga.url // aponta pra página do mangá, não pra galeria
+                    url = manga.url  // aponta pra página do mangá, não pra galeria
                     date_upload = date
                 },
             ),
@@ -191,15 +191,18 @@ abstract class NhentaiNetBr : KeiSource() {
 
     // ============================================================
     // IMAGE REQUEST — precisa do Referer pra não quebrar img
+    // Usa okhttp puro (Request.Builder) porque KeiSource 1.6 não expõe GET()
     // ============================================================
     override fun imageRequest(page: Page): Request {
-        val newHeaders = headers.newBuilder()
-            .set("Referer", page.url)
-            .set("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
-            .set("Sec-Fetch-Dest", "image")
-            .set("Sec-Fetch-Mode", "no-cors")
-            .set("Sec-Fetch-Site", "same-origin")
+        return Request.Builder()
+            .url(page.imageUrl!!)
+            .header("Referer", page.url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
+            .header("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
+            .header("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8")
+            .header("Sec-Fetch-Dest", "image")
+            .header("Sec-Fetch-Mode", "no-cors")
+            .header("Sec-Fetch-Site", "same-origin")
             .build()
-        return GET(page.imageUrl!!, newHeaders)
     }
 }
