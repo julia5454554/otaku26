@@ -19,7 +19,6 @@ ARTIFACTS_DIR = Path.home() / "apk-artifacts"
 # The checked-out `repo` branch we publish into (the working directory).
 REPO_DIR = Path.cwd()
 
-# ⬇️⬇️⬇️ TROCAR AQUI — seu usuário/repo
 ICON_BASE_URL = "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main"
 RELEASE_BASE_URL = f"https://github.com/{REPO_NAME}/releases/download"
 ASSET_LIMIT = 495  # Actual limit is 1000 but we upload 2 items per extension.
@@ -30,8 +29,13 @@ to_delete: list[str] = json.loads(sys.argv[1])
 current_sha = sys.argv[2]
 current_sha_short = current_sha[:7]
 
-with REPO_DIR.joinpath("index.json").open() as f:
-    remote_proto = json_format.Parse(f.read(), index_pb2.Index())
+# ⬇️ CORRIGIDO: tolera index.json inexistente na primeira execução
+index_path = REPO_DIR.joinpath("index.json")
+if index_path.exists():
+    with index_path.open() as f:
+        remote_proto = json_format.Parse(f.read(), index_pb2.Index())
+else:
+    remote_proto = index_pb2.Index()
 
 remote_extensions = {
     ext.packageName: ext for ext in remote_proto.extensionList.extensions
@@ -192,7 +196,6 @@ legacy_index = update_legacy_index(
     to_delete,
 )
 
-# ⬇️⬇️⬇️ TROCAR AQUI — seu nome, badge, fingerprint e site
 index = index_pb2.Index(
     name="Otaku26",
     badgeLabel="OTK26",
@@ -263,7 +266,6 @@ def create_release(tag: str):
         "--title",
         f"Repository Update {tag}",
         "--notes",
-        # ⬇️⬇️⬇️ TROCAR AQUI
         f"Automated update from julia5454554/otaku26@{current_sha}",
     )
 
