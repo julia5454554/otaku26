@@ -116,8 +116,7 @@ abstract class NhentaiNetBr : KeiSource() {
         return MangasPage(mangas, hasNext)
     }
 
-    override suspend fun getPopularManga(page: Int) =
-        parseListPage(client.get("$baseUrl/ultimos/page/$page/").asJsoup())
+    override suspend fun getPopularManga(page: Int) = parseListPage(client.get("$baseUrl/ultimos/page/$page/").asJsoup())
 
     override suspend fun getLatestUpdates(page: Int) = getPopularManga(page)
 
@@ -315,16 +314,14 @@ abstract class NhentaiNetBr : KeiSource() {
     // ============================================================
     // IMAGE REQUEST — usa okhttp puro (KeiSource 1.6 não expõe GET())
     // ============================================================
-    override fun imageRequest(page: Page): Request {
-        return Request.Builder()
-            .url(page.imageUrl!!)
-            .header("Referer", page.url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
-            .header("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
-            .header("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8")
-            .header("Sec-Fetch-Dest", "image")
-            .header("Sec-Fetch-Mode", "no-cors")
-            .header("Sec-Fetch-Site", "same-origin")
-            .build()
-    }
+    override fun imageRequest(page: Page): Request = Request.Builder()
+        .url(page.imageUrl!!)
+        .header("Referer", page.url)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
+        .header("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
+        .header("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8")
+        .header("Sec-Fetch-Dest", "image")
+        .header("Sec-Fetch-Mode", "no-cors")
+        .header("Sec-Fetch-Site", "same-origin")
+        .build()
 }
