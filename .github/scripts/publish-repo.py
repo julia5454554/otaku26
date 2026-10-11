@@ -196,7 +196,7 @@ legacy_index = update_legacy_index(
 index = index_pb2.Index(
     name="Otaku26",
     badgeLabel="OTK26",
-    signingKey="COLE_AQUI_A_FINGERPRINT_SHA256_DO_SEU_KEYSTORE_SEM_ESPACOS_E_MINUSCULA",
+    signingKey="1feed090bdba111cae1648fcd1a89cacdf279d42b46086a982fcc2cb3444c023",
     contact=index_pb2.Contact(
         website="https://github.com/julia5454554/otaku26",
     ),
