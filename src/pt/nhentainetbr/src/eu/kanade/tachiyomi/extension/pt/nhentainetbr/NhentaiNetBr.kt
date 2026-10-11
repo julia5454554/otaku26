@@ -16,6 +16,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Locale
 import kotlin.time.Duration.Companion.seconds
@@ -52,11 +53,36 @@ abstract class NhentaiNetBr : KeiSource() {
         "photography", "category", "parodia", "parody", "tag", "tags",
     )
 
+    /**
+     * Marcadores que o site NÃO indexa (são convenção de título).
+     * Removidos da query de busca antes de enviar.
+     */
+    private val searchNoiseRegex = Regex(
+        """\[[^\]]*]|\([^)]*\)|【[^】]*】|《[^》]*》""",
+    )
+
     private fun isVideoUrl(href: String): Boolean = videoUrlRegex.containsMatchIn(href)
 
     private fun isNonContentUrl(href: String): Boolean {
         val path = href.removePrefix(baseUrl).trim('/').lowercase()
         return path in nonContentPaths || path.split("/").any { it in nonContentPaths }
+    }
+
+    /**
+     * Normaliza a query:
+     *  - Remove [Doujinshi], (Digital), 【...】, 《...》
+     *  - Colapsa espaços múltiplos
+     *  - Trim
+     *  - URL-encoda corretamente (acentos, &, etc.)
+     */
+    private fun buildSearchQuery(rawQuery: String): String {
+        val cleaned = rawQuery
+            .replace(searchNoiseRegex, " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        // Se o usuário digitou SÓ marcadores, usa a query original
+        val effective = cleaned.ifBlank { rawQuery.trim() }
+        return URLEncoder.encode(effective, "UTF-8")
     }
 
     // ============================================================
@@ -120,15 +146,19 @@ abstract class NhentaiNetBr : KeiSource() {
         return MangasPage(mangas, hasNext)
     }
 
-    override suspend fun getPopularManga(page: Int) = parseListPage(client.get("$baseUrl/ultimos/page/$page/").asJsoup())
+    override suspend fun getPopularManga(page: Int) =
+        parseListPage(client.get("$baseUrl/ultimos/page/$page/").asJsoup())
 
     override suspend fun getLatestUpdates(page: Int) = getPopularManga(page)
 
     // ============================================================
-    // BUSCA
+    // BUSCA — normalizada (remove [..], (..), etc.)
     // ============================================================
     override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
-        val encoded = query.replace(" ", "+")
+        // Se veio vazia, cai na listagem normal (evita URL inválida)
+        if (query.isBlank()) return getPopularManga(page)
+
+        val encoded = buildSearchQuery(query)
         val url = if (page == 1) "$baseUrl/?s=$encoded" else "$baseUrl/page/$page/?s=$encoded"
         return parseListPage(client.get(url).asJsoup())
     }
@@ -310,14 +340,16 @@ abstract class NhentaiNetBr : KeiSource() {
     // ============================================================
     // IMAGE REQUEST — usa okhttp puro (KeiSource 1.6 não expõe GET())
     // ============================================================
-    override fun imageRequest(page: Page): Request = Request.Builder()
-        .url(page.imageUrl!!)
-        .header("Referer", page.url)
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
-        .header("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
-        .header("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8")
-        .header("Sec-Fetch-Dest", "image")
-        .header("Sec-Fetch-Mode", "no-cors")
-        .header("Sec-Fetch-Site", "same-origin")
-        .build()
+    override fun imageRequest(page: Page): Request {
+        return Request.Builder()
+            .url(page.imageUrl!!)
+            .header("Referer", page.url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
+            .header("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
+            .header("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8")
+            .header("Sec-Fetch-Dest", "image")
+            .header("Sec-Fetch-Mode", "no-cors")
+            .header("Sec-Fetch-Site", "same-origin")
+            .build()
+    }
 }
