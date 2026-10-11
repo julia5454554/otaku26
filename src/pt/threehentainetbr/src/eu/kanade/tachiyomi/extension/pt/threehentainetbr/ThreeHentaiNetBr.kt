@@ -251,6 +251,6 @@ class ThreeHentaiNetBr(
         val newHeaders = headersBuilder()
             .set("Referer", page.url)
             .build()
-        return GET(page.imageUrl!!, newHeaders)
+        return GET(page.imageUrl!!, newHeaderrs)
     }
 }
