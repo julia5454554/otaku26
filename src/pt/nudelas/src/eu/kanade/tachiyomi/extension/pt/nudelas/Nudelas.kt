@@ -14,6 +14,8 @@ import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import org.json.JSONArray
+import org.json.JSONObject
 import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -50,7 +52,6 @@ class Nudelas(
     // LISTAGEM — tema novo (Tailwind + a.gallery-card)
     // ============================================================
     private fun Element.toSManga(): SManga? {
-        // Filtra publieditorial pela flag do card
         val flagText = selectFirst(".card-flag")?.text().orEmpty()
         if (flagText.contains("publi", ignoreCase = true)) return null
 
@@ -87,7 +88,6 @@ class Nudelas(
         return MangasPage(mangas, hasNext)
     }
 
-    // /page/1/ dá 301 pra home → usa home direto na página 1
     override fun popularMangaRequest(page: Int): Request {
         val url = if (page == 1) "$baseUrl/" else "$baseUrl/page/$page/"
         return GET(url, headers)
@@ -115,7 +115,6 @@ class Nudelas(
     override fun mangaDetailsParse(response: Response): SManga {
         val document = response.asJsoup()
 
-        // Só categorias reais — ignora a navegação inteira do tema
         val genres = document.select(
             "span.post-cat a.category, " +
                 "a[rel=category], " +
@@ -165,13 +164,19 @@ class Nudelas(
     }
 
     // ============================================================
-    // PÁGINAS — filtra por slug do post (evita banner e relacionados)
+    // PÁGINAS — extrai do JSON-LD (ImageGallery), fallback pro slug
     // ============================================================
     override fun pageListParse(response: Response): List<Page> {
         val galleryUrl = response.request.url.toString()
         val document = response.asJsoup()
 
-        // Slug atual: /ketty-moon-pelada-bem-gostosinha-em-fotos-ousadas/
+        // 1) Tenta extrair do JSON-LD (application/ld+json)
+        val jsonLdImages = extractImagesFromJsonLd(document)
+        if (jsonLdImages.isNotEmpty()) {
+            return jsonLdImages.mapIndexed { i, url -> Page(i, url = galleryUrl, imageUrl = url) }
+        }
+
+        // 2) Fallback: filtra por slug (menos confiável, mas funciona na maioria)
         val slug = response.request.url.pathSegments
             .lastOrNull { it.isNotBlank() }
             ?.takeIf { it.isNotEmpty() }
@@ -184,19 +189,52 @@ class Nudelas(
             if (raw.isBlank()) return
             if (!raw.contains("/wp-content/uploads/")) return
             if (!raw.contains(slug, ignoreCase = true)) return
-            // Dedupe: tira .webp e sufixo -768x1024
             val key = raw.substringAfterLast("/")
                 .removeSuffix(".webp")
                 .replace(Regex("-\\d+x\\d+(?=\\.)"), "")
             if (seen.add(key)) ordered.add(raw)
         }
 
-        // 1) Preferência: <a href> (imagem full-size, costuma não ter .webp)
         document.select("a[href*=/wp-content/uploads/]").forEach { addUrl(it.absUrl("href")) }
-        // 2) Fallback: <img src>
         document.select("img[src*=/wp-content/uploads/]").forEach { addUrl(it.absUrl("src")) }
 
         return ordered.mapIndexed { i, url -> Page(i, url = galleryUrl, imageUrl = url) }
+    }
+
+    private fun extractImagesFromJsonLd(document: org.jsoup.nodes.Document): List<String> {
+        val scripts = document.select("script[type=application/ld+json]")
+        for (script in scripts) {
+            val jsonText = script.data()
+            if (jsonText.isBlank()) continue
+            try {
+                val root = JSONObject(jsonText)
+                val graph = root.optJSONArray("@graph") ?: continue
+                for (i in 0 until graph.length()) {
+                    val item = graph.getJSONObject(i)
+                    if (item.optString("@type") == "ImageGallery") {
+                        val imageArray = item.optJSONArray("image") ?: continue
+                        val urls = mutableListOf<String>()
+                        for (j in 0 until imageArray.length()) {
+                            val imgObj = imageArray.optJSONObject(j) ?: continue
+                            val contentUrl = imgObj.optString("contentUrl")
+                            if (contentUrl.isNotBlank()) {
+                                // Converte para URL absoluta se necessário
+                                val absoluteUrl = if (contentUrl.startsWith("http")) {
+                                    contentUrl
+                                } else {
+                                    "$baseUrl${contentUrl.removePrefix("/")}"
+                                }
+                                urls.add(absoluteUrl)
+                            }
+                        }
+                        if (urls.isNotEmpty()) return urls
+                    }
+                }
+            } catch (_: Exception) {
+                // Ignora JSON inválido e tenta o próximo script
+            }
+        }
+        return emptyList()
     }
 
     override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
