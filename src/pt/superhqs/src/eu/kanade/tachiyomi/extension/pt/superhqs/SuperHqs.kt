@@ -27,7 +27,7 @@ class SuperHqs(
 ) : HttpSource() {
 
     override val name = "Super HQs"
-    override val baseUrl = "https://superhqs.com"
+    override val baseUrl = "https://superhq.com.br"
     override val supportsLatest = true
 
     override val client: OkHttpClient = network.client.newBuilder()
@@ -48,7 +48,8 @@ class SuperHqs(
         return GET(url, headers)
     }
 
-    override fun popularMangaParse(response: Response): MangasPage = parseMangaList(response.asJsoup())
+    override fun popularMangaParse(response: Response): MangasPage =
+        parseMangaList(response.asJsoup())
 
     override fun latestUpdatesRequest(page: Int): Request = popularMangaRequest(page)
     override fun latestUpdatesParse(response: Response): MangasPage = popularMangaParse(response)
@@ -66,12 +67,14 @@ class SuperHqs(
         return GET(url, headers)
     }
 
-    override fun searchMangaParse(response: Response): MangasPage = parseMangaList(response.asJsoup())
+    override fun searchMangaParse(response: Response): MangasPage =
+        parseMangaList(response.asJsoup())
 
     // ============================================================
     // DETALHES
     // ============================================================
-    override fun mangaDetailsParse(response: Response): SManga = parseMangaDetails(response.asJsoup())
+    override fun mangaDetailsParse(response: Response): SManga =
+        parseMangaDetails(response.asJsoup())
 
     private fun parseMangaDetails(document: Document): SManga = SManga.create().apply {
         val ogTitle = document.selectFirst("meta[property=og:title]")?.attr("content")
@@ -115,9 +118,7 @@ class SuperHqs(
     // PÁGINAS — recursivo (coleta via /pagina/N/)
     // ============================================================
     override fun pageListRequest(chapter: SChapter): Request {
-        val url = if (chapter.url.startsWith("http")) {
-            chapter.url
-        } else {
+        val url = if (chapter.url.startsWith("http")) chapter.url else {
             "$baseUrl${if (chapter.url.startsWith("/")) chapter.url else "/${chapter.url}"}"
         }
         return GET(url, headers)
@@ -144,7 +145,6 @@ class SuperHqs(
 
         val images = document.select("img[src*='/wp-content/uploads/']")
 
-        // Obtém a assinatura da primeira imagem relevante
         var baseSignature: String? = null
         for (img in images) {
             if (img.hasClass("thumb") || img.parents().any { it.hasClass("thumb") }) continue
@@ -254,9 +254,11 @@ class SuperHqs(
         return null
     }
 
-    private fun isImageUrl(url: String): Boolean = url.substringBefore('?').substringBefore('#').matches(
-        Regex(""".*\.(jpg|jpeg|png|webp)$""", RegexOption.IGNORE_CASE),
-    )
+    private fun isImageUrl(url: String): Boolean {
+        return url.substringBefore('?').substringBefore('#').matches(
+            Regex(""".*\.(jpg|jpeg|png|webp)$""", RegexOption.IGNORE_CASE),
+        )
+    }
 
     override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
 
