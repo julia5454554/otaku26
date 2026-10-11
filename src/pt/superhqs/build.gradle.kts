@@ -14,3 +14,4 @@ keiyoushi {
         baseUrl = "https://superhq.com.br"
         lang = "pt-BR"
     }
+}
