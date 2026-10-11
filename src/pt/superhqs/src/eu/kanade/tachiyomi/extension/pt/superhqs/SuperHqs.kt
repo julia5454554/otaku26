@@ -1,64 +1,80 @@
 package eu.kanade.tachiyomi.extension.pt.superhqs
 
+import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
-import eu.kanade.tachiyomi.source.model.SMangaUpdate
+import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.annotation.Source
-import keiyoushi.network.get
-import keiyoushi.source.KeiSource
-import kotlinx.serialization.json.JsonElement
-import okhttp3.HttpUrl
+import keiyoushi.network.rateLimit
+import okhttp3.Headers
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.jsoup.parser.Parser
+import kotlin.time.Duration.Companion.seconds
 
 @Source
-abstract class SuperHqs : KeiSource() {
+class SuperHqs(
+    override val lang: String = "pt-BR",
+    override val id: Long = 2026000005L,
+) : HttpSource() {
 
-    override suspend fun getPopularManga(page: Int): MangasPage {
+    override val name = "Super HQs"
+    override val baseUrl = "https://superhqs.com"
+    override val supportsLatest = true
+
+    override val client: OkHttpClient = network.client.newBuilder()
+        .rateLimit(1, 2.seconds)
+        .build()
+
+    override fun headersBuilder(): Headers.Builder = Headers.Builder()
+        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
+        .add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+        .add("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8")
+        .add("Referer", "$baseUrl/")
+
+    // ============================================================
+    // POPULARES / ÚLTIMOS
+    // ============================================================
+    override fun popularMangaRequest(page: Int): Request {
         val url = if (page == 1) "$baseUrl/" else "$baseUrl/page/$page/"
-        val response = client.get(url)
-        return parseMangaList(response.asJsoup())
+        return GET(url, headers)
     }
 
-    override suspend fun getLatestUpdates(page: Int): MangasPage = getPopularManga(page)
+    override fun popularMangaParse(response: Response): MangasPage =
+        parseMangaList(response.asJsoup())
 
-    override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
+    override fun latestUpdatesRequest(page: Int): Request = popularMangaRequest(page)
+    override fun latestUpdatesParse(response: Response): MangasPage = popularMangaParse(response)
+
+    // ============================================================
+    // BUSCA
+    // ============================================================
+    override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         val url = "$baseUrl/".toHttpUrl().newBuilder().apply {
             addQueryParameter("s", query)
             if (page > 1) {
                 addEncodedPathSegments("page/$page/")
             }
         }.build()
-        val response = client.get(url)
-        return parseMangaList(response.asJsoup())
+        return GET(url, headers)
     }
 
-    override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
-        val path = url.encodedPath
-        if (path.isBlank() || path == "/") return null
-        val document = client.get("$baseUrl$path").asJsoup()
-        return parseMangaDetails(document).apply {
-            setUrlWithoutDomain(path)
-        }
-    }
+    override fun searchMangaParse(response: Response): MangasPage =
+        parseMangaList(response.asJsoup())
 
-    override suspend fun fetchMangaUpdate(
-        manga: SManga,
-        chapters: List<SChapter>,
-        fetchDetails: Boolean,
-        fetchChapters: Boolean,
-    ): SMangaUpdate {
-        val document = client.get(getMangaUrl(manga)).asJsoup()
-        val updatedManga = if (fetchDetails) parseMangaDetails(document) else manga
-        val updatedChapters = if (fetchChapters) parseChapterList(document, manga.url) else chapters
-        return SMangaUpdate(updatedManga, updatedChapters)
-    }
+    // ============================================================
+    // DETALHES
+    // ============================================================
+    override fun mangaDetailsParse(response: Response): SManga =
+        parseMangaDetails(response.asJsoup())
 
     private fun parseMangaDetails(document: Document): SManga = SManga.create().apply {
         val ogTitle = document.selectFirst("meta[property=og:title]")?.attr("content")
@@ -84,28 +100,39 @@ abstract class SuperHqs : KeiSource() {
         status = SManga.COMPLETED
     }
 
-    private fun parseChapterList(document: Document, mangaUrl: String): List<SChapter> = listOf(
-        SChapter.create().apply {
-            name = "Capítulo Único"
-            setUrlWithoutDomain(mangaUrl)
-            chapter_number = 1f
-        },
-    )
+    // ============================================================
+    // CAPÍTULOS — capítulo único
+    // ============================================================
+    override fun chapterListParse(response: Response): List<SChapter> {
+        val mangaUrl = response.request.url.toString().removePrefix(baseUrl)
+        return listOf(
+            SChapter.create().apply {
+                name = "Capítulo Único"
+                url = mangaUrl
+                chapter_number = 1f
+            },
+        )
+    }
 
-    override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val chapterUrl = if (chapter.url.startsWith("http")) {
-            chapter.url
-        } else {
+    // ============================================================
+    // PÁGINAS — recursivo (coleta via /pagina/N/)
+    // ============================================================
+    override fun pageListRequest(chapter: SChapter): Request {
+        val url = if (chapter.url.startsWith("http")) chapter.url else {
             "$baseUrl${if (chapter.url.startsWith("/")) chapter.url else "/${chapter.url}"}"
         }
+        return GET(url, headers)
+    }
 
+    override fun pageListParse(response: Response): List<Page> {
+        val chapterUrl = response.request.url.toString()
         val pages = mutableListOf<Page>()
         val visited = mutableSetOf<String>()
         collectPages(chapterUrl, pages, visited)
         return pages
     }
 
-    private suspend fun collectPages(
+    private fun collectPages(
         url: String,
         pages: MutableList<Page>,
         visited: MutableSet<String>,
@@ -113,7 +140,9 @@ abstract class SuperHqs : KeiSource() {
         if (url in visited) return
         visited.add(url)
 
-        val document = client.get(url).asJsoup()
+        val response = client.newCall(GET(url, headers)).execute()
+        val document = response.asJsoup()
+
         val images = document.select("img[src*='/wp-content/uploads/']")
 
         // Obtém a assinatura da primeira imagem relevante
@@ -152,7 +181,9 @@ abstract class SuperHqs : KeiSource() {
         }
 
         val nextLink = document.selectFirst("a.botao-r[href*='/pagina/'], a[rel='next']")
-            ?: document.selectFirst("a[href*='/pagina/']")?.takeIf { it.text().contains("Próxima", ignoreCase = true) }
+            ?: document.selectFirst("a[href*='/pagina/']")
+                ?.takeIf { it.text().contains("Próxima", ignoreCase = true) }
+
         if (nextLink != null) {
             val nextUrl = nextLink.attr("abs:href")
             if (nextUrl.isNotBlank() && nextUrl != url) {
@@ -176,9 +207,9 @@ abstract class SuperHqs : KeiSource() {
         val srcset = img.attr("srcset")
         if (srcset.isNotBlank()) {
             val srcsetUrls = srcset.split(",").map { it.trim().substringBefore(" ") }
-            for (url in srcsetUrls.reversed()) {
-                if (url.isNotBlank() && isImageUrl(url)) {
-                    val fullUrl = if (url.startsWith("/")) "$baseUrl$url" else url
+            for (u in srcsetUrls.reversed()) {
+                if (u.isNotBlank() && isImageUrl(u)) {
+                    val fullUrl = if (u.startsWith("/")) "$baseUrl$u" else u
                     if (fullUrl.startsWith("$baseUrl/wp-content/uploads/")) {
                         return fullUrl
                     }
@@ -189,7 +220,6 @@ abstract class SuperHqs : KeiSource() {
         return null
     }
 
-    // Função atualizada para ignorar formato e sufixos
     private fun getImageSignature(imageUrl: String): String? {
         var fileName = imageUrl.substringAfterLast('/').substringBeforeLast('.')
         fileName = fileName.replace(Regex("""(scaled|copy)""", RegexOption.IGNORE_CASE), "")
@@ -225,12 +255,22 @@ abstract class SuperHqs : KeiSource() {
         return null
     }
 
-    private fun isImageUrl(url: String): Boolean = url.substringBefore('?').substringBefore('#').matches(
-        Regex(""".*\.(jpg|jpeg|png|webp)$""", RegexOption.IGNORE_CASE),
-    )
+    private fun isImageUrl(url: String): Boolean {
+        return url.substringBefore('?').substringBefore('#').matches(
+            Regex(""".*\.(jpg|jpeg|png|webp)$""", RegexOption.IGNORE_CASE),
+        )
+    }
 
-    override fun getFilterList(data: JsonElement?): FilterList = FilterList()
+    override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
 
+    // ============================================================
+    // FILTROS — vazio
+    // ============================================================
+    override fun getFilterList(): FilterList = FilterList()
+
+    // ============================================================
+    // LISTAGEM — parse comum
+    // ============================================================
     private fun parseMangaList(document: Document): MangasPage {
         val mangas = mutableListOf<SManga>()
         val seenUrls = mutableSetOf<String>()
@@ -253,13 +293,15 @@ abstract class SuperHqs : KeiSource() {
             mangas.add(
                 SManga.create().apply {
                     title = Parser.unescapeEntities(mangaTitle, false)
-                    setUrlWithoutDomain(href)
+                    url = href.removePrefix(baseUrl)
                     thumbnail_url = img
                 },
             )
         }
 
-        val hasNextPage = document.selectFirst("link[rel='next'], a.next.page-numbers, .next, .pagination .next, a[rel='next']") != null
+        val hasNextPage = document.selectFirst(
+            "link[rel='next'], a.next.page-numbers, .next, .pagination .next, a[rel='next']",
+        ) != null
         return MangasPage(mangas, hasNextPage)
     }
 }
