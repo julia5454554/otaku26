@@ -1,13 +1,13 @@
 import subprocess
 import time
 
-REPO_NAME = "Awerkori/extensoes"
+REPO_NAME = "julia5454554/otaku26"
 RETRY_ATTEMPTS = 4
 RETRY_BASE_DELAY = 60
 
 
 def run_gh(*args: str, success_errors: tuple[str, ...] = ()) -> str:
-    attempt = 1
+    attempt = 0
     delay = RETRY_BASE_DELAY
     while True:
         result = subprocess.run(
@@ -36,7 +36,7 @@ def run_gh(*args: str, success_errors: tuple[str, ...] = ()) -> str:
             retry_delay = RETRY_BASE_DELAY
             if rate_limit.returncode == 0:
                 retry_delay = max(
-                    int(rate_limit.stdout.strip()) - int(time.time()) + 10,
+                    int(rate_limit.stdout.strip()) - int(time.time()) + 5,
                     RETRY_BASE_DELAY,
                 )
         else:
