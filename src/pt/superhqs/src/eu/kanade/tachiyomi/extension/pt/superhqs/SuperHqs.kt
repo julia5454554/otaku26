@@ -93,7 +93,9 @@ abstract class SuperHqs : KeiSource() {
     )
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val chapterUrl = if (chapter.url.startsWith("http")) chapter.url else {
+        val chapterUrl = if (chapter.url.startsWith("http")) {
+            chapter.url
+        } else {
             "$baseUrl${if (chapter.url.startsWith("/")) chapter.url else "/${chapter.url}"}"
         }
 
@@ -215,18 +217,17 @@ abstract class SuperHqs : KeiSource() {
         if (imageUrl != null) {
             val fileName = imageUrl.substringAfterLast('/').lowercase()
             if (fileName.matches(Regex(""".*-\d+-\d+\.(jpg|jpeg|png|webp)$""")) ||
-                fileName.matches(Regex(""".*-\d+\.(jpg|jpeg|png|webp)$"""))) {
+                fileName.matches(Regex(""".*-\d+\.(jpg|jpeg|png|webp)$"""))
+            ) {
                 return imageUrl
             }
         }
         return null
     }
 
-    private fun isImageUrl(url: String): Boolean {
-        return url.substringBefore('?').substringBefore('#').matches(
-            Regex(""".*\.(jpg|jpeg|png|webp)$""", RegexOption.IGNORE_CASE)
-        )
-    }
+    private fun isImageUrl(url: String): Boolean = url.substringBefore('?').substringBefore('#').matches(
+        Regex(""".*\.(jpg|jpeg|png|webp)$""", RegexOption.IGNORE_CASE),
+    )
 
     override fun getFilterList(data: JsonElement?): FilterList = FilterList()
 
