@@ -473,13 +473,13 @@
         "name": "Nudelas",
         "packageName": "eu.kanade.tachiyomi.extension.pt.nudelas",
         "resources": {
-          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/8deb0af/tachiyomi-pt.nudelas-v1.4.1.apk",
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/f731518/tachiyomi-pt.nudelas-v1.4.2.apk",
           "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
-          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/8deb0af/tachiyomi-pt.nudelas-v1.4.1.jar"
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/f731518/tachiyomi-pt.nudelas-v1.4.2.jar"
         },
         "extensionLib": "1.4",
-        "versionCode": "104001",
-        "versionName": "1.4.1",
+        "versionCode": "104002",
+        "versionName": "1.4.2",
         "contentWarning": "CONTENT_WARNING_NSFW",
         "sources": [
           {

@@ -221,12 +221,12 @@
   },
   "eu.kanade.tachiyomi.extension.pt.nudelas": {
     "apk": {
-      "name": "tachiyomi-pt.nudelas-v1.4.1.apk",
-      "sha256": "459c630bd4f4294b01447e8e17a73b5d6fe5fa827135de8117ceb8e5b16fac45"
+      "name": "tachiyomi-pt.nudelas-v1.4.2.apk",
+      "sha256": "331b217ff1e9b7227bf8e21102f971ab886df9cc78df44fb8fd51ac497a44a5a"
     },
     "jar": {
-      "name": "tachiyomi-pt.nudelas-v1.4.1.jar",
-      "sha256": "0b16ceecba33f5dd9505386876ac4814477e18c32d0a69d3a9d09cbdda0b39d7"
+      "name": "tachiyomi-pt.nudelas-v1.4.2.jar",
+      "sha256": "bca122d189b70a402c4b2d526dfebcd099c9b5cec17fed6be2065d70b05fc038"
     }
   },
   "eu.kanade.tachiyomi.extension.pt.piratahq": {
