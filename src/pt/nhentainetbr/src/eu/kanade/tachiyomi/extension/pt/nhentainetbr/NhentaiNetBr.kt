@@ -75,8 +75,7 @@ abstract class NhentaiNetBr : KeiSource() {
         return MangasPage(mangas, hasNext)
     }
 
-    override suspend fun getPopularManga(page: Int) =
-        parseListPage(client.get("$baseUrl/ultimos/page/$page/").asJsoup())
+    override suspend fun getPopularManga(page: Int) = parseListPage(client.get("$baseUrl/ultimos/page/$page/").asJsoup())
 
     override suspend fun getLatestUpdates(page: Int) = getPopularManga(page)
 
@@ -135,7 +134,7 @@ abstract class NhentaiNetBr : KeiSource() {
             listOf(
                 SChapter.create().apply {
                     name = "Capítulo 1"
-                    url = manga.url  // aponta pra página do mangá, não pra galeria
+                    url = manga.url // aponta pra página do mangá, não pra galeria
                     date_upload = date
                 },
             ),
