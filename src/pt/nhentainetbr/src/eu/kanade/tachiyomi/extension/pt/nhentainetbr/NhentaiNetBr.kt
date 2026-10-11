@@ -27,16 +27,20 @@ abstract class NhentaiNetBr : KeiSource() {
 
     override val supportsLatest = true
 
-    // Rate limit: 1 req / 2 s (evita bloqueio de IP)
-    override fun OkHttpClient.Builder.configureClient() = rateLimit(1, 2.seconds)
+    /**
+     * Rate limit: 5 req / 1 s.
+     * 10x mais rápido que a 1.4 (que era 1 req / 2 s).
+     * Só conta requisições HTML — imagens NÃO passam pelo rate limit.
+     * Se bloquear, volta pra 3/1s ou 2/1s.
+     */
+    override fun OkHttpClient.Builder.configureClient() = rateLimit(5, 1.seconds)
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.ENGLISH)
 
     /**
      * Filtro de vídeo/live-action confirmado via curl:
-     * URLs reais do site: /a-bela-e-a-fera-2-a-gyaru-e-o-otaku-live-action/
-     *                    /parodia/live-action/
-     * Basta conter "live-action" (case-insensitive) OU "/jav/".
+     * URLs reais: /a-bela-e-a-fera-2-a-gyaru-e-o-otaku-live-action/
+     *             /parodia/live-action/
      */
     private val videoUrlRegex = Regex("(?i)(live-action|/jav/)")
 
@@ -116,7 +120,8 @@ abstract class NhentaiNetBr : KeiSource() {
         return MangasPage(mangas, hasNext)
     }
 
-    override suspend fun getPopularManga(page: Int) = parseListPage(client.get("$baseUrl/ultimos/page/$page/").asJsoup())
+    override suspend fun getPopularManga(page: Int) =
+        parseListPage(client.get("$baseUrl/ultimos/page/$page/").asJsoup())
 
     override suspend fun getLatestUpdates(page: Int) = getPopularManga(page)
 
@@ -273,9 +278,6 @@ abstract class NhentaiNetBr : KeiSource() {
 
     // ============================================================
     // PÁGINAS — imgs dentro do painel #galeria-N
-    // FIX: o site REMOVEU o style="height:auto" inline.
-    // Marcador antigo (img[style*=height]) não funciona mais.
-    // Agora: pega todas as <img> dentro do painel e filtra por URL.
     // ============================================================
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val rawUrl = chapter.url.substringBefore("#")
@@ -285,7 +287,6 @@ abstract class NhentaiNetBr : KeiSource() {
         val pageUrl = if (rawUrl.startsWith("http")) rawUrl else "$baseUrl$rawUrl"
         val document = client.get(pageUrl).asJsoup()
 
-        // Escopo: painel específico #galeria-N OU a página inteira
         val scope: Element = if (dataId != null) {
             document.selectFirst("div.galeriaConteudo#galeria-$dataId")
                 ?: document.selectFirst("div[id=galeria-$dataId]")
@@ -294,19 +295,15 @@ abstract class NhentaiNetBr : KeiSource() {
             document
         }
 
-        // Pega TODAS as <img> dentro do escopo e filtra por URL válida
         val images = scope.select("img").mapNotNull { img ->
             val src = img.absUrl("src").ifBlank { img.absUrl("data-src") }
             if (src.isBlank()) return@mapNotNull null
-            // Só imagens de conteúdo real
             if (!src.contains("/wp-content/uploads/")) return@mapNotNull null
-            // Exclui logos / marcas d'água
             if (src.contains("Logo", ignoreCase = true)) return@mapNotNull null
             if (src.contains("mundohentaioficial", ignoreCase = true)) return@mapNotNull null
-            // Exclui thumbs de relacionados (têm -NNNxNNN no fim)
             if (Regex("-\\d+x\\d+(?=\\.(webp|jpg|jpeg|png))").containsMatchIn(src)) return@mapNotNull null
             src
-        }.distinct() // evita duplicatas se data-src == src
+        }.distinct()
 
         return images.mapIndexed { i, url -> Page(i, url = pageUrl, imageUrl = url) }
     }
@@ -314,14 +311,16 @@ abstract class NhentaiNetBr : KeiSource() {
     // ============================================================
     // IMAGE REQUEST — usa okhttp puro (KeiSource 1.6 não expõe GET())
     // ============================================================
-    override fun imageRequest(page: Page): Request = Request.Builder()
-        .url(page.imageUrl!!)
-        .header("Referer", page.url)
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
-        .header("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
-        .header("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8")
-        .header("Sec-Fetch-Dest", "image")
-        .header("Sec-Fetch-Mode", "no-cors")
-        .header("Sec-Fetch-Site", "same-origin")
-        .build()
+    override fun imageRequest(page: Page): Request {
+        return Request.Builder()
+            .url(page.imageUrl!!)
+            .header("Referer", page.url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
+            .header("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
+            .header("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8")
+            .header("Sec-Fetch-Dest", "image")
+            .header("Sec-Fetch-Mode", "no-cors")
+            .header("Sec-Fetch-Site", "same-origin")
+            .build()
+    }
 }
