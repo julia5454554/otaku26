@@ -6,7 +6,7 @@ plugins {
 
 keiyoushi {
     name = "3HentaiNetBr"
-    versionCode = 1.2
+    versionCode = 2
     contentWarning = ContentWarning.NSFW
     libVersion = "1.4"
 
