@@ -197,6 +197,27 @@
         ]
       },
       {
+        "name": "Mangas Hentais",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.mangashentais",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/efbceb8/tachiyomi-pt.mangashentais-v1.6.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/efbceb8/tachiyomi-pt.mangashentais-v1.6.1.jar"
+        },
+        "extensionLib": "1.6",
+        "versionCode": "106001",
+        "versionName": "1.6.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "8172856970164366225",
+            "name": "Mangas Hentais",
+            "language": "pt-BR",
+            "homeUrl": "https://mangashentais.com"
+          }
+        ]
+      },
+      {
         "name": "MeuHentai",
         "packageName": "eu.kanade.tachiyomi.extension.pt.meuhentai",
         "resources": {

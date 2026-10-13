@@ -179,6 +179,16 @@
       "sha256": "52ef574c17cb42af8c2dc432d9afab8586509a870d7e0ff47628a3381ec92a98"
     }
   },
+  "eu.kanade.tachiyomi.extension.pt.mangashentais": {
+    "apk": {
+      "name": "tachiyomi-pt.mangashentais-v1.6.1.apk",
+      "sha256": "e05fda0f976a6a37b42bd86cb170b6263c4891882a822f2a21c98069c0434d7e"
+    },
+    "jar": {
+      "name": "tachiyomi-pt.mangashentais-v1.6.1.jar",
+      "sha256": "c42e12096b75c0d1912e694d6c29afb68d3db498fce1d788bc78e57b03dbf8ed"
+    }
+  },
   "eu.kanade.tachiyomi.extension.pt.meuhentai": {
     "apk": {
       "name": "tachiyomi-pt.meuhentai-v1.4.1.apk",
