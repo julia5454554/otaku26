@@ -249,6 +249,16 @@
       "sha256": "3c736f0ec09fe668a386ef21ca9f54e5e77ace131a4c9a2709881bee6a6f1a0c"
     }
   },
+  "eu.kanade.tachiyomi.extension.pt.quadrinhosdesexo": {
+    "apk": {
+      "name": "tachiyomi-pt.quadrinhosdesexo-v1.6.1.apk",
+      "sha256": "76e1640c68f6ad27880fefe05a1e9328b2c697ac53be2f8d6b2445924f4ffd6f"
+    },
+    "jar": {
+      "name": "tachiyomi-pt.quadrinhosdesexo-v1.6.1.jar",
+      "sha256": "3de99c704415d88bb938021ea9b15c024421157e14df3e45f8a987bd03a601e8"
+    }
+  },
   "eu.kanade.tachiyomi.extension.pt.quadrinhoseroticosblog": {
     "apk": {
       "name": "tachiyomi-pt.quadrinhoseroticosblog-v1.4.1.apk",
