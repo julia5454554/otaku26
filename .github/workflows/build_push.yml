@@ -45,7 +45,12 @@ jobs:
       - id: generate-matrices
         name: Create output matrices
         run: |
-          python ./.github/scripts/generate-build-matrices.py "$NX_BASE" Release
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Execução manual detectada. Forçando compilação de TODAS as extensões..."
+            python ./.github/scripts/generate-build-matrices.py "4b825dc642cb6eb9a060e54bf8d69288fbee4904" Release
+          else
+            python ./.github/scripts/generate-build-matrices.py "$NX_BASE" Release
+          fi
 
   build:
     name: Build extensions (${{ matrix.chunk.number }})
@@ -87,7 +92,7 @@ jobs:
 
       - name: Upload APKs (${{ matrix.chunk.number }})
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: "github.repository == 'Awerkori/fonte-extensoes'"
+        if: "github.repository == 'julia5454554/otaku26'"
         with:
           name: "individual-apks-${{ matrix.chunk.number }}"
           path: |
@@ -103,10 +108,9 @@ jobs:
   publish:
     name: Publish extension repo
     needs: [prepare, build]
-    # Run whenever there's anything to publish, new/changed builds OR only deletions
     if: >-
       always() &&
-      github.repository == 'Awerkori/fonte-extensoes' &&
+      github.repository == 'julia5454554/otaku26' &&
       needs.prepare.result == 'success' &&
       needs.build.result != 'failure' &&
       needs.build.result != 'cancelled' &&
@@ -130,7 +134,7 @@ jobs:
       - name: Checkout repo branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: Awerkori/extensoes
+          repository: julia5454554/otaku26
           token: ${{ secrets.SYNC_PAT }}
           ref: repo
           path: repo
@@ -151,8 +155,8 @@ jobs:
             git add .
             git commit -m "Update extensions repo"
             git push
-            curl https://purge.jsdelivr.net/gh/Awerkori/extensoes@repo/index.json
-            curl https://purge.jsdelivr.net/gh/Awerkori/extensoes@repo/index.pb
+            curl https://purge.jsdelivr.net/gh/julia5454554/otaku26@repo/index.json
+            curl https://purge.jsdelivr.net/gh/julia5454554/otaku26@repo/index.pb
           else
             echo "No changes to commit"
           fi
