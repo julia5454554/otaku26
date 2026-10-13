@@ -301,12 +301,12 @@
   },
   "eu.kanade.tachiyomi.extension.pt.threehentainetbr": {
     "apk": {
-      "name": "tachiyomi-pt.threehentainetbr-v1.4.1.apk",
-      "sha256": "c15027b3e5648facf997f9e0d8b192b612b62422df9631b24515f21165983a28"
+      "name": "tachiyomi-pt.threehentainetbr-v1.4.2.apk",
+      "sha256": "a91507e48d06a2c9d588919ba6c6201d27957f0806c6aa9ef32c905ef99d3e08"
     },
     "jar": {
-      "name": "tachiyomi-pt.threehentainetbr-v1.4.1.jar",
-      "sha256": "96067cc22f80491401b9283cdc750aca4b24541053ebe1eb7ac2c2b72e80060e"
+      "name": "tachiyomi-pt.threehentainetbr-v1.4.2.jar",
+      "sha256": "89538bb712213d997ee45d985d60c160e68b3bb734404decb49ff4079ff1e72e"
     }
   },
   "eu.kanade.tachiyomi.extension.pt.tiamanhwa": {
