@@ -1,0 +1,1561 @@
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import shutil
+import tempfile
+from pathlib import Path
+from typing import NamedTuple
+
+UPSTREAM_REMOTE = "upstream"
+UPSTREAM_URL = "https://github.com/keiyoushi/extensions-source.git"
+UPSTREAM_BRANCH = "main"
+SYNC_BRANCH = "sync"
+DEFERRED_MIGRATIONS_FILE = Path(".github/sync-deferred-migrations.json")
+
+
+def git(*args: str, check: bool = True) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        capture_output=True,
+        text=True,
+    )
+
+    if check and result.returncode != 0:
+        print(result.stderr.strip())
+        sys.exit(result.returncode)
+
+    return result.stdout
+
+
+def ensure_upstream_remote() -> None:
+    if subprocess.run(
+        ["git", "remote", "get-url", UPSTREAM_REMOTE],
+        capture_output=True,
+    ).returncode != 0:
+        git("remote", "add", UPSTREAM_REMOTE, UPSTREAM_URL)
+
+
+def ensure_clean_tree() -> None:
+    if git("status", "--porcelain").strip():
+        print("Working tree is not clean")
+        sys.exit(1)
+
+
+def parse_name_status(output: str) -> list[tuple[str, list[str]]]:
+    tokens = output.rstrip("\0").split("\0")
+    entries = []
+    i = 0
+
+    while i < len(tokens) and tokens[i]:
+        status = tokens[i]
+        i += 1
+        path_count = 2 if status[0] in {"R", "C"} else 1
+        entries.append((status, tokens[i:i + path_count]))
+        i += path_count
+
+    return entries
+
+
+def is_preserved(path: str) -> bool:
+    return path == ".github" or path.startswith(".github/")
+
+
+def sync_unit(path: str) -> str | None:
+    if is_preserved(path):
+        return None
+
+    parts = path.split("/")
+
+    if len(parts) >= 3 and parts[0] == "src":
+        return "/".join(parts[:3])
+
+    if len(parts) >= 2 and parts[0] in {"lib", "lib-multisrc"}:
+        return "/".join(parts[:2])
+
+    return path
+
+
+def changed_entries(base: str, ref: str) -> list[tuple[str, list[str]]]:
+    output = git("diff", "--name-status", "--find-renames", "-z", base, ref)
+    return parse_name_status(output)
+
+
+def collect_units(entries: list[tuple[str, list[str]]]) -> tuple[list[str], list[str]]:
+    units = set()
+    preserved = set()
+
+    for _, paths in entries:
+        for path in paths:
+            unit = sync_unit(path)
+
+            if unit is None:
+                preserved.add(path)
+            else:
+                units.add(unit)
+
+    return sorted(units), sorted(preserved)
+
+
+def path_exists(ref: str, path: str) -> bool:
+    return subprocess.run(
+        ["git", "cat-file", "-e", f"{ref}:{path}"],
+        capture_output=True,
+    ).returncode == 0
+
+
+_VERSION_CODE_RE = re.compile(r"(versionCode\s*=\s*)(\d+)")
+_THEME_RE = re.compile(r"""theme\s*=\s*["']([^"']+)["']""")
+_LIB_VERSION_RE = re.compile(r"""libVersion\s*=\s*["']([^"']+)["']""")
+_BASE_VERSION_CODE_RE = re.compile(r"baseVersionCode\s*=\s*(\d+)")
+_LOCAL_PROJECT_RE = re.compile(r"""project\s*\(\s*(?:path\s*=\s*)?["'](:[^"']+)["']""")
+
+
+def _read_file_text(ref: str | None, path: str) -> str | None:
+    if ref is None:
+        p = Path(path)
+        return p.read_text() if p.exists() else None
+    result = subprocess.run(
+        ["git", "show", f"{ref}:{path}"],
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout if result.returncode == 0 else None
+
+
+def read_base_version_code(ref: str | None, theme: str) -> int:
+    theme_gradle = f"lib-multisrc/{theme}/build.gradle.kts"
+    content = _read_file_text(ref, theme_gradle)
+    if not content:
+        return 0
+    m = _BASE_VERSION_CODE_RE.search(content)
+    return int(m.group(1)) if m else 0
+
+
+class ExtensionVersion(NamedTuple):
+    raw: int
+    base: int
+    suffix: int
+    lib: str
+
+    @property
+    def android_code(self) -> int:
+        # Keep identical to ExtensionPlugin.androidVersionCodeProvider.
+        return int("".join(part.zfill(2) for part in self.lib.split("."))) * 1000 + self.suffix
+
+    @property
+    def name(self) -> str:
+        return f"{self.lib}.{self.suffix}"
+
+
+def lib_version_key(lib_version: str) -> tuple[int, ...]:
+    """Return the semantic ordering key used for library compatibility."""
+    parts = [int(part) for part in lib_version.split(".")]
+    while len(parts) > 1 and parts[-1] == 0:
+        parts.pop()
+    return tuple(parts)
+
+
+def is_lib_version_downgrade(local_lib: str | None, upstream_lib: str | None) -> bool:
+    """Whether replacing local metadata would lower the shared library API."""
+    return bool(
+        local_lib
+        and upstream_lib
+        and lib_version_key(local_lib) > lib_version_key(upstream_lib)
+    )
+
+
+def effective_version_code(ref: str | None, unit: str) -> ExtensionVersion | None:
+    """Read both the effective suffix and the complete Android publication version."""
+    gradle_path = f"{unit}/build.gradle.kts"
+    content = _read_file_text(ref, gradle_path)
+    if not content:
+        return None
+
+    v_match = _VERSION_CODE_RE.search(content)
+    if not v_match:
+        return None
+
+    raw_vc = int(v_match.group(2))
+    t_match = _THEME_RE.search(content)
+    theme = t_match.group(1) if t_match else None
+    base_vc = read_base_version_code(ref, theme) if theme else 0
+    lib_match = _LIB_VERSION_RE.search(content)
+    if lib_match is None:
+        return None
+    return ExtensionVersion(raw_vc, base_vc, raw_vc + base_vc, lib_match.group(1))
+
+
+def local_version_ahead_of_upstream(
+    unit: str,
+    upstream_ref: str,
+    local_ref: str | None = None,
+) -> tuple[ExtensionVersion, ExtensionVersion] | None:
+    """Return local/upstream versions when applying upstream would downgrade a unit."""
+    local_info = effective_version_code(local_ref, unit)
+    upstream_info = effective_version_code(upstream_ref, unit)
+    if local_info is None or upstream_info is None:
+        return None
+    # A lower library version is a compatibility downgrade even if a malformed
+    # or unusually large raw versionCode happens to make its publication number
+    # look newer.
+    if is_lib_version_downgrade(local_info.lib, upstream_info.lib):
+        return local_info, upstream_info
+    if local_info.android_code <= upstream_info.android_code:
+        return None
+    return local_info, upstream_info
+
+
+def pending_sync_units(
+    diff_units: list[str],
+    protected_units: list[str],
+    upstream_ref: str,
+) -> list[str]:
+    """Return HEAD/upstream differences which still need a sync attempt.
+
+    Protected Nox units and units whose local version is deliberately ahead are
+    expected divergences, not missing upstream updates.
+    """
+    protected = set(protected_units)
+    pending = []
+    for unit in diff_units:
+        if unit in protected:
+            print(f"Expected Nox divergence: preserving protected {unit}")
+            continue
+        if local_version_ahead_of_upstream(unit, upstream_ref) is not None:
+            if has_newer_upstream_for_version_only_unit(unit, upstream_ref):
+                print(f"Version-only divergence: applying upstream update for {unit}")
+                pending.append(unit)
+                continue
+            print(f"Expected version divergence: local {unit} is ahead of upstream")
+            continue
+        pending.append(unit)
+    return pending
+
+
+def has_staged_changes() -> bool:
+    """Return whether the index differs from HEAD, failing on git errors."""
+    result = subprocess.run(["git", "diff", "--cached", "--quiet"])
+    if result.returncode == 0:
+        return False
+    if result.returncode == 1:
+        return True
+    raise RuntimeError("Unable to inspect staged sync changes")
+
+
+def merge_in_progress() -> bool:
+    return subprocess.run(
+        ["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"],
+        capture_output=True,
+    ).returncode == 0
+
+
+def bump_version_code_if_needed(unit: str, upstream_ref: str) -> tuple[int, int, int, int, int, int, int] | None:
+    """If upstream publication version >= local publication version, bump local raw versionCode.
+
+    Returns (loc_raw, loc_base, loc_eff, up_raw, up_base, up_eff, new_raw) if bumped, None otherwise.
+    Only rewrites the file on disk; caller must `git add` it.
+    """
+    local_info = effective_version_code(None, unit)
+    upstream_info = effective_version_code(upstream_ref, unit)
+
+    if local_info is None or upstream_info is None:
+        return None
+
+    if is_lib_version_downgrade(local_info.lib, upstream_info.lib):
+        print(f"Version guard: blocked {unit}; libVersion downgrade "
+              f"({local_info.name} -> {upstream_info.name})")
+        return None
+
+    loc_raw, loc_base, loc_eff, _ = local_info
+    up_raw, up_base, up_eff, _ = upstream_info
+
+    if upstream_info.android_code < local_info.android_code:
+        return None
+    if local_info.lib != upstream_info.lib:
+        print(f"Version guard: deferred {unit}; libVersion migration required "
+              f"({local_info.name} -> {upstream_info.name}), preserving Nox code and version")
+        return None
+
+    desired_effective = up_eff + 1
+    new_raw = desired_effective - loc_base
+
+    gradle_path = f"{unit}/build.gradle.kts"
+    local_file = Path(gradle_path)
+    local_text = local_file.read_text()
+    new_text = _VERSION_CODE_RE.sub(lambda m: f"{m.group(1)}{new_raw}", local_text)
+    local_file.write_text(new_text)
+
+    return loc_raw, loc_base, loc_eff, up_raw, up_base, up_eff, new_raw
+
+
+def structural_metadata(ref: str | None, unit: str) -> tuple[str | None, str | None] | None:
+    """Read the multisrc selectors whose compatibility is independent of source code."""
+    content = _read_file_text(ref, f"{unit}/build.gradle.kts")
+    if content is None:
+        return None
+    theme = _THEME_RE.search(content)
+    lib_version = _LIB_VERSION_RE.search(content)
+    return (
+        theme.group(1) if theme else None,
+        lib_version.group(1) if lib_version else None,
+    )
+
+
+def multisrc_metadata(ref: str | None, theme: str) -> tuple[str | None, int] | None:
+    """Read the compatibility and publication metadata for one multisrc theme."""
+    content = _read_file_text(ref, f"lib-multisrc/{theme}/build.gradle.kts")
+    if content is None:
+        return None
+    lib = _LIB_VERSION_RE.search(content)
+    base = _BASE_VERSION_CODE_RE.search(content)
+    return (lib.group(1) if lib else None, int(base.group(1)) if base else 0)
+
+
+def dependency_map(ref: str | None) -> dict[str, list[str]]:
+    """Map every selected multisrc theme to its extension units."""
+    result: dict[str, list[str]] = {}
+    paths = Path("src").glob("*/*/build.gradle.kts") if ref is None else ()
+    if ref is None:
+        for gradle in paths:
+            metadata = structural_metadata(None, "/".join(gradle.parts[:3]))
+            if metadata and metadata[0]:
+                result.setdefault(metadata[0], []).append("/".join(gradle.parts[:3]))
+    else:
+        for path in git("ls-tree", "-r", "--name-only", ref, "src").splitlines():
+            if not path.endswith("/build.gradle.kts"):
+                continue
+            unit = "/".join(path.split("/")[:3])
+            metadata = structural_metadata(ref, unit)
+            if metadata and metadata[0]:
+                result.setdefault(metadata[0], []).append(unit)
+    return {theme: sorted(set(units)) for theme, units in result.items()}
+
+
+def load_deferred_migrations() -> dict[str, dict[str, object]]:
+    if not DEFERRED_MIGRATIONS_FILE.exists():
+        return {}
+    data = json.loads(DEFERRED_MIGRATIONS_FILE.read_text())
+    return data.get("themes", {})
+
+
+def write_deferred_migrations(themes: dict[str, dict[str, object]]) -> bool:
+    if not themes:
+        if DEFERRED_MIGRATIONS_FILE.exists():
+            DEFERRED_MIGRATIONS_FILE.unlink()
+            return True
+        return False
+    DEFERRED_MIGRATIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    DEFERRED_MIGRATIONS_FILE.write_text(json.dumps({"themes": themes}, indent=2, sort_keys=True) + "\n")
+    return True
+
+
+def preflight_multisrc(
+    base: str,
+    upstream_ref: str,
+    protected_units: list[str],
+) -> tuple[dict[str, list[dict[str, object]]], set[str]]:
+    """Plan all multisrc migrations before mutating the real worktree.
+
+    A deferred theme is deliberately included even after its upstream commit became
+    an ancestor of main.  This is what prevents an `-s ours` merge from losing it.
+    """
+    changed_themes = {
+        unit.split("/", 1)[1]
+        for unit in collect_units(changed_entries(base, upstream_ref))[0]
+        if unit.startswith("lib-multisrc/")
+    }
+    # A source may switch themes even when no existing multisrc directory changed.
+    # Include both selectors so its dependencies are recalculated before merging.
+    for unit in collect_units(changed_entries(base, upstream_ref))[0]:
+        if not unit.startswith("src/"):
+            continue
+        local = structural_metadata(None, unit)
+        upstream = structural_metadata(upstream_ref, unit)
+        if local != upstream:
+            changed_themes.update(value[0] for value in (local, upstream) if value and value[0])
+    deferred = load_deferred_migrations()
+    changed_themes.update(deferred)
+    local_deps = dependency_map(None)
+    upstream_deps = dependency_map(upstream_ref)
+    report: dict[str, list[dict[str, object]]] = {}
+    blocked: set[str] = set()
+    protected = set(protected_units)
+    for entry in deferred.values():
+        protected.update(str(unit) for unit in entry.get("units", []))
+    for theme in sorted(changed_themes):
+        local_multi = multisrc_metadata(None, theme)
+        upstream_multi = multisrc_metadata(upstream_ref, theme)
+        if local_multi == upstream_multi and theme not in deferred:
+            continue
+        dependents = sorted(set(local_deps.get(theme, [])) | set(upstream_deps.get(theme, [])))
+        rows = []
+        for unit in dependents:
+            local = structural_metadata(None, unit)
+            upstream = structural_metadata(upstream_ref, unit)
+            local_lib = local[1] if local else None
+            upstream_lib = upstream[1] if upstream else None
+            new_lib = upstream_multi[0] if upstream_multi else None
+            lib_downgrade = is_lib_version_downgrade(local_lib, new_lib)
+            needs = bool(local_lib != new_lib or (local and upstream and local[0] != upstream[0]))
+            supported = bool(
+                upstream_multi
+                and upstream
+                and upstream[0] == theme
+                and upstream_lib == new_lib
+            )
+            source_changed = bool(subprocess.run(
+                ["git", "diff", "--quiet", base, "HEAD", "--", f"{unit}/src"],
+            ).returncode != 0)
+            unit_changed = bool(subprocess.run(
+                ["git", "diff", "--quiet", base, "HEAD", "--", unit],
+            ).returncode != 0)
+            rows.append({
+                "unit": unit,
+                "protected": unit in protected,
+                "local_libVersion": local_lib,
+                "upstream_libVersion": upstream_lib,
+                "multisrc_libVersion": new_lib,
+                "libVersion_downgrade": lib_downgrade,
+                "source_divergent": source_changed,
+                "unit_divergent": unit_changed,
+                "migration_required": needs,
+                "migration_supported": supported,
+            })
+        report[theme] = rows
+        if any(
+            row["libVersion_downgrade"]
+            or (row["migration_required"] and not row["migration_supported"])
+            for row in rows
+        ):
+            blocked.add(theme)
+    return report, blocked
+
+
+def apply_structural_metadata_to_path(
+    gradle_path: Path,
+    theme: str | None,
+    lib_version: str | None,
+) -> bool:
+    if not gradle_path.exists():
+        return False
+    text = gradle_path.read_text()
+    original = text
+
+    def replace_or_insert(value: str | None, pattern: re.Pattern[str], key: str) -> None:
+        nonlocal text
+        if value is None:
+            text = pattern.sub("", text)
+            return
+        replacement = f'{key} = "{value}"'
+        if pattern.search(text):
+            text = pattern.sub(replacement, text, count=1)
+        else:
+            marker = re.search(r"(?m)^(\s*)source\s*\{", text)
+            if marker:
+                indent = marker.group(1)
+                text = text[:marker.start()] + f"{indent}{replacement}\n" + text[marker.start():]
+
+    replace_or_insert(lib_version, _LIB_VERSION_RE, "libVersion")
+    replace_or_insert(theme, _THEME_RE, "theme")
+    if text == original:
+        return False
+    gradle_path.write_text(text)
+    return True
+
+
+class MigrationPlanResult(tuple):
+    """Result of verify_migration_plan.
+
+    Unpacks as `(blocked, proven)`.
+    For backwards compatibility, behaves like a set of blocked themes when compared
+    or operated on with sets.
+    """
+    def __new__(cls, blocked: set[str], proven: dict[str, dict[str, object]]):
+        return super().__new__(cls, (blocked, proven))
+
+    @property
+    def blocked(self) -> set[str]:
+        return self[0]
+
+    @property
+    def proven(self) -> dict[str, dict[str, object]]:
+        return self[1]
+
+    def __eq__(self, other):
+        if isinstance(other, (set, frozenset)):
+            return self.blocked == other
+        return super().__eq__(other)
+
+    def __or__(self, other):
+        if isinstance(other, (set, frozenset)):
+            return self.blocked | other
+        return NotImplemented
+
+    def __ror__(self, other):
+        if isinstance(other, (set, frozenset)):
+            return other | self.blocked
+        return NotImplemented
+
+
+def verify_migration_plan(
+    report: dict[str, list[dict[str, object]]],
+    upstream_ref: str,
+) -> MigrationPlanResult:
+    """Compile protected selector migrations in a disposable worktree.
+
+    This is intentionally before the real merge/restore/rm operations.  A failed
+    candidate becomes deferred instead of leaving the real tree half migrated.
+    """
+    candidates = {
+        theme: [str(row["unit"]) for row in rows if row["migration_required"]]
+        for theme, rows in report.items()
+    }
+    candidates = {theme: units for theme, units in candidates.items() if units}
+    if not candidates:
+        return MigrationPlanResult(set(), {})
+    blocked: set[str] = set()
+    proven: dict[str, dict[str, object]] = {}
+    root = Path.cwd()
+    base = git("merge-base", "HEAD", upstream_ref).strip()
+    with tempfile.TemporaryDirectory(prefix="nox-sync-preflight-") as directory:
+        sandbox = Path(directory) / "repo"
+        git("worktree", "add", "--detach", str(sandbox), "HEAD")
+        try:
+            if Path("local.properties").exists():
+                shutil.copy("local.properties", sandbox / "local.properties")
+            for theme, units in candidates.items():
+                subprocess.run(
+                    ["git", "-C", str(sandbox), "reset", "--hard", "HEAD"],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                subprocess.run(
+                    ["git", "-C", str(sandbox), "clean", "-fdq"],
+                    check=True,
+                )
+                if Path("local.properties").exists() and not (sandbox / "local.properties").exists():
+                    shutil.copy("local.properties", sandbox / "local.properties")
+
+                result = subprocess.run(
+                    ["git", "-C", str(sandbox), "restore", f"--source={upstream_ref}", "--worktree", "--staged", "--", f"lib-multisrc/{theme}"],
+                    text=True,
+                )
+                if result.returncode:
+                    blocked.add(theme)
+                    continue
+                rows_by_unit = {str(row["unit"]): row for row in report.get(theme, [])}
+                theme_failed = False
+                for unit in units:
+                    upstream = _read_file_text(upstream_ref, f"{unit}/build.gradle.kts")
+                    if upstream is None:
+                        blocked.add(theme)
+                        theme_failed = True
+                        break
+                    # This restore replaces the complete extension directory,
+                    # so source equality alone is insufficient. Preserve any
+                    # local Gradle, asset, or resource customization in the
+                    # candidate and prove that reconciliation can build.
+                    preserve = rows_by_unit[unit].get("protected", False) or rows_by_unit[unit].get("unit_divergent", False)
+                    if not preserve:
+                        result = subprocess.run(
+                            ["git", "-C", str(sandbox), "restore", f"--source={upstream_ref}", "--worktree", "--staged", "--", unit],
+                        )
+                        if result.returncode:
+                            blocked.add(theme)
+                            theme_failed = True
+                            break
+                    local = sandbox / unit / "build.gradle.kts"
+                    if not local.exists():
+                        blocked.add(theme)
+                        theme_failed = True
+                        break
+                    target = structural_metadata(upstream_ref, unit)
+                    if target is None:
+                        blocked.add(theme)
+                        theme_failed = True
+                        break
+                    if preserve:
+                        apply_structural_metadata_to_path(local, target[0], target[1])
+                        # Structural file removals: delete files in unit that upstream removed vs base
+                        deleted = subprocess.run(
+                            ["git", "diff", "--name-only", "--diff-filter=D", base, upstream_ref, "--", unit],
+                            capture_output=True,
+                            text=True,
+                        ).stdout.splitlines()
+                        for df in deleted:
+                            if df.strip():
+                                (sandbox / df.strip()).unlink(missing_ok=True)
+                if theme_failed or theme in blocked:
+                    continue
+                paths = [f"lib-multisrc/{theme}", *units]
+                subprocess.run(["git", "-C", str(sandbox), "add", "-A", "--", *paths], check=True)
+                tree = subprocess.run(["git", "-C", str(sandbox), "write-tree"], capture_output=True, text=True, check=True).stdout.strip()
+                # Metadata generation does not compile the protected source and
+                # therefore cannot prove a libVersion API migration is safe.
+                tasks = [f":{unit.replace('/', ':')}:assembleDebug" for unit in units]
+                result = subprocess.run([str(sandbox / "gradlew"), *tasks], cwd=sandbox, text=True)
+                if result.returncode:
+                    blocked.add(theme)
+                    continue
+                if subprocess.run(["git", "-C", str(sandbox), "diff", "--quiet", tree, "--", *paths]).returncode:
+                    blocked.add(theme)
+                    continue
+                proven[theme] = {"tree": tree, "units": units}
+        finally:
+            os.chdir(root)
+            git("worktree", "remove", "--force", str(sandbox), check=False)
+    return MigrationPlanResult(blocked, proven)
+
+
+def deferred_state(report: dict[str, list[dict[str, object]]], blocked: set[str], upstream_ref: str) -> dict[str, dict[str, object]]:
+    """Persist only migrations that could not be proven safe; they are retried later."""
+    state: dict[str, dict[str, object]] = {}
+    for theme in blocked:
+        state[theme] = {
+            "upstream_ref": upstream_ref,
+            "units": [row["unit"] for row in report.get(theme, []) if row["migration_required"]],
+        }
+    # A previously deferred theme that is not in this plan has become compatible
+    # (or was deleted upstream), so it is intentionally removed after application.
+    return state
+
+
+def merge_structural_metadata(unit: str, upstream_ref: str) -> bool:
+    """Adopt compatible upstream selectors while leaving Nox source/version fields intact."""
+    local_path = Path(f"{unit}/build.gradle.kts")
+    upstream = structural_metadata(upstream_ref, unit)
+    if not local_path.exists() or upstream is None:
+        return False
+
+    upstream_theme, upstream_lib = upstream
+    changed = apply_structural_metadata_to_path(local_path, upstream_theme, upstream_lib)
+    if changed:
+        print(f"Structural metadata: {unit} -> theme={upstream_theme or 'none'}, libVersion={upstream_lib or 'none'}")
+    return changed
+
+
+def bump_after_structural_change(unit: str, previous_info: ExtensionVersion | None) -> bool:
+    """Keep a structural migration strictly newer than the pre-migration Android version."""
+    if previous_info is None:
+        return False
+    current_info = effective_version_code(None, unit)
+    if current_info is None:
+        return False
+
+    if is_lib_version_downgrade(previous_info.lib, current_info.lib):
+        raise RuntimeError(f"Refusing structural libVersion downgrade for {unit}: "
+                           f"{previous_info.name} -> {current_info.name}")
+    if current_info.android_code > previous_info.android_code:
+        return False
+
+    if current_info.lib != previous_info.lib:
+        # A compatible library migration is planned before mutation. Do not
+        # encode a library migration by changing only the raw versionCode.
+        return False
+    raw_vc, base_vc, _, _ = current_info
+    new_raw = previous_info.suffix + 1 - base_vc
+    if new_raw <= raw_vc:
+        return False
+    gradle_path = Path(f"{unit}/build.gradle.kts")
+    text = gradle_path.read_text()
+    gradle_path.write_text(_VERSION_CODE_RE.sub(lambda m: f"{m.group(1)}{new_raw}", text, count=1))
+    print(f"Structural version guard: {unit} (versionCode {raw_vc} -> {new_raw})")
+    return True
+
+
+def validate_multisrc_compatibility() -> list[str]:
+    """Return extension units whose selected multisrc and libVersion cannot build."""
+    errors = []
+    for gradle_path in sorted(Path("src").glob("*/*/build.gradle.kts")):
+        unit = "/".join(gradle_path.parts[:3])
+        content = gradle_path.read_text()
+        theme_match = _THEME_RE.search(content)
+        lib_match = _LIB_VERSION_RE.search(content)
+        if not theme_match or not lib_match:
+            continue
+
+        theme = theme_match.group(1)
+        extension_lib = lib_match.group(1)
+        multisrc_path = Path(f"lib-multisrc/{theme}/build.gradle.kts")
+        if not multisrc_path.exists():
+            errors.append(f"{unit}: multisrc '{theme}' não existe")
+            continue
+        multisrc_match = _LIB_VERSION_RE.search(multisrc_path.read_text())
+        multisrc_lib = multisrc_match.group(1) if multisrc_match else None
+        if multisrc_lib != extension_lib:
+            errors.append(
+                f"{unit}: extensão libVersion {extension_lib} != multisrc {theme} {multisrc_lib or 'ausente'}",
+            )
+    return errors
+
+
+def validate_local_project_dependencies() -> list[str]:
+    """Return Gradle project dependencies whose local module no longer exists."""
+    errors = []
+    roots = [Path("core"), Path("compiler"), Path("lib"), Path("lib-multisrc"), Path("src")]
+    build_files = []
+    for root in roots:
+        if root.is_dir():
+            build_files.extend(root.rglob("build.gradle.kts"))
+            build_files.extend(root.rglob("build.gradle"))
+
+    for build_file in sorted(set(build_files)):
+        content = build_file.read_text()
+        for match in _LOCAL_PROJECT_RE.finditer(content):
+            project_path = match.group(1)
+            module_path = Path(*project_path.removeprefix(":").split(":"))
+            has_build_file = any(
+                (module_path / filename).is_file()
+                for filename in ("build.gradle.kts", "build.gradle")
+            )
+            if not has_build_file:
+                line_number = content.count("\n", 0, match.start()) + 1
+                errors.append(
+                    f"{build_file}:{line_number}: {project_path} -> "
+                    f"{module_path} não existe",
+                )
+    return errors
+
+
+def validate_affected_builds(units: list[str]) -> None:
+    """Compile migrated sources too: source-info alone cannot detect shared API breakage."""
+    gradlew = Path("gradlew")
+    if not units or not gradlew.exists():
+        return
+    tasks = [
+        f":{unit.replace('/', ':')}:{task}"
+        for unit in units if unit.startswith("src/")
+        for task in ("generateSourceInfo", "compileReleaseKotlin")
+    ]
+    if not tasks:
+        return
+    print(f"Validating affected extensions: {', '.join(units)}")
+    result = subprocess.run([f"./{gradlew.name}", *tasks], text=True)
+    if result.returncode != 0:
+        raise RuntimeError("Build validation failed for affected extensions")
+
+
+def get_protected_nox_units(base: str, upstream_ref: str) -> list[str]:
+    """Protected Nox extensions: Read from .github/nox-protected.txt."""
+    protected_file = Path(".github/nox-protected.txt")
+    if not protected_file.exists():
+        return []
+    protected = []
+    for line in protected_file.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            protected.append(line)
+    return protected
+
+
+def protected_multisrc_bases(base: str, upstream_ref: str) -> dict[str, str]:
+    """Retain the original delta base across deferred `ours` merges."""
+    deferred = load_deferred_migrations()
+    units = collect_units(changed_entries(base, "HEAD"))[0]
+    themes = {unit.split("/", 1)[1] for unit in units if unit.startswith("lib-multisrc/")}
+    themes.update(theme for theme, entry in deferred.items() if entry.get("patch_base"))
+    result = {}
+    for theme in sorted(themes):
+        unit = f"lib-multisrc/{theme}"
+        patch_base = str(deferred.get(theme, {}).get("patch_base", base))
+        if path_exists("HEAD", unit) and git("diff", "--name-only", upstream_ref, "HEAD", "--", unit).strip():
+            result[theme] = patch_base
+    return result
+
+
+def merge_multisrc(sandbox: Path, theme: str, base: str, upstream_ref: str) -> None:
+    """Three-way functional merge; ambiguous edits/deletions fail closed."""
+    unit = f"lib-multisrc/{theme}"
+
+    def files(ref: str) -> dict[str, tuple[str, bytes]]:
+        entries = git("ls-tree", "-r", "-z", ref, "--", unit).split("\0")
+        result = {}
+        for entry in filter(None, entries):
+            metadata, path = entry.split("\t", 1)
+            mode, kind, oid = metadata.split()
+            if kind != "blob" or mode not in {"100644", "100755"}:
+                raise ValueError("unsupported tree entry")
+            result[path] = (mode, subprocess.run(["git", "cat-file", "blob", oid], capture_output=True, check=True).stdout)
+        return result
+
+    ancestor, local, upstream = files(base), files("HEAD"), files(upstream_ref)
+    if not upstream:
+        raise ValueError("protected multisrc removed upstream")
+    for path in sorted(ancestor.keys() | local.keys() | upstream.keys()):
+        before, ours, theirs = ancestor.get(path), local.get(path), upstream.get(path)
+        if ours == before or ours == theirs:
+            merged = theirs
+        elif theirs == before:
+            merged = ours
+        elif None in (before, ours, theirs):
+            raise ValueError(f"add/delete conflict: {path}")
+        else:
+            mode = theirs[0] if ours[0] == before[0] else ours[0]
+            if theirs[0] != before[0] and ours[0] not in (before[0], theirs[0]):
+                raise ValueError(f"mode conflict: {path}")
+            with tempfile.TemporaryDirectory(prefix="nox-sync-merge-") as directory:
+                inputs = [Path(directory) / name for name in ("ours", "base", "upstream")]
+                contents = [ours[1], before[1], theirs[1]]
+                if path == f"{unit}/build.gradle.kts":
+                    # Only known structural fields prefer upstream; dependencies/test setup still merge.
+                    texts = [content.decode("utf-8") for content in contents]
+                    for pattern in (_LIB_VERSION_RE, _BASE_VERSION_CODE_RE):
+                        target = pattern.search(texts[2])
+                        for index in (0, 1):
+                            if target and not pattern.search(texts[index]):
+                                raise ValueError(f"structural field insertion requires review: {path}")
+                            texts[index] = pattern.sub(lambda _: target.group(0) if target else "", texts[index])
+                    contents = [text.encode("utf-8") for text in texts]
+                for target, content in zip(inputs, contents):
+                    target.write_bytes(content)
+                merge = subprocess.run(["git", "merge-file", "-p", *map(str, inputs)], capture_output=True)
+                if merge.returncode:
+                    raise ValueError(f"functional conflict: {path}")
+                merged = (mode, merge.stdout)
+        destination = sandbox / path
+        if merged is None:
+            destination.unlink(missing_ok=True)
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(merged[1])
+            destination.chmod(int(merged[0], 8) & 0o777)
+
+
+def prove_protected_multisrc(
+    base: str, upstream_ref: str, protected_units: list[str], blocked: set[str],
+) -> tuple[dict[str, dict[str, object]], dict[str, dict[str, object]]]:
+    bases = protected_multisrc_bases(base, upstream_ref)
+    backlog = load_deferred_migrations()
+    changed = set(collect_units(changed_entries(base, upstream_ref))[0])
+    local_changed = set(collect_units(changed_entries(base, "HEAD"))[0])
+    local_deps, upstream_deps = dependency_map(None), dependency_map(upstream_ref)
+    accepted, deferred = {}, {}
+    for theme, patch_base in bases.items():
+        unit = f"lib-multisrc/{theme}"
+        dependents = sorted(set(local_deps.get(theme, [])) | set(upstream_deps.get(theme, [])))
+        selector_changed = any(
+            dependent in changed and structural_metadata(None, dependent) != structural_metadata(upstream_ref, dependent)
+            for dependent in dependents
+        )
+        if unit not in changed and theme not in backlog and not selector_changed:
+            continue
+        entry = {"patch_base": patch_base, "upstream_ref": git("rev-parse", upstream_ref).strip(), "units": dependents}
+        if theme in blocked:
+            deferred[theme] = dict(entry, reason="unsupported structural migration")
+            continue
+        with tempfile.TemporaryDirectory(prefix="nox-multisrc-proof-") as directory:
+            sandbox = Path(directory) / "repo"
+            git("worktree", "add", "--detach", str(sandbox), "HEAD")
+            try:
+                # Match normal sync decisions for build infrastructure without replacing Nox units.
+                excluded = set(dependents)
+                for other in set(bases) | blocked:
+                    excluded.add(f"lib-multisrc/{other}")
+                    excluded.update(local_deps.get(other, []))
+                    excluded.update(upstream_deps.get(other, []))
+                for normal in sorted(changed - local_changed - excluded):
+                    subprocess.run(["git", "-C", str(sandbox), "rm", "-r", "--ignore-unmatch", "--quiet", "--", normal], check=True)
+                    if path_exists(upstream_ref, normal):
+                        subprocess.run(["git", "-C", str(sandbox), "restore", f"--source={upstream_ref}", "--staged", "--worktree", "--", normal], check=True)
+                merge_multisrc(sandbox, theme, patch_base, upstream_ref)
+                for dependent in dependents:
+                    target = structural_metadata(upstream_ref, dependent)
+                    preserve = dependent in protected_units or dependent in local_changed or target is None
+                    if preserve:
+                        if target:
+                            apply_structural_metadata_to_path(sandbox / dependent / "build.gradle.kts", *target)
+                    else:
+                        subprocess.run(["git", "-C", str(sandbox), "rm", "-r", "--ignore-unmatch", "--quiet", "--", dependent], check=True)
+                        subprocess.run(["git", "-C", str(sandbox), "restore", f"--source={upstream_ref}", "--staged", "--worktree", "--", dependent], check=True)
+                if Path("local.properties").exists():
+                    shutil.copy("local.properties", sandbox / "local.properties")
+                for dependent in dependents:
+                    metadata = (sandbox / dependent / "build.gradle.kts").read_text()
+                    selector, lib = _THEME_RE.search(metadata), _LIB_VERSION_RE.search(metadata)
+                    if selector:
+                        selected = sandbox / "lib-multisrc" / selector.group(1) / "build.gradle.kts"
+                        selected_lib = _LIB_VERSION_RE.search(selected.read_text()) if selected.exists() else None
+                        if not lib or not selected_lib or lib.group(1) != selected_lib.group(1):
+                            raise ValueError(f"incompatible dependent selector: {dependent}")
+                paths = [unit, *dependents]
+                subprocess.run(["git", "-C", str(sandbox), "add", "-A", "--", *paths], check=True)
+                tree = subprocess.run(["git", "-C", str(sandbox), "write-tree"], capture_output=True, text=True, check=True).stdout.strip()
+                tasks = [f":{dependent.replace('/', ':')}:assembleDebug" for dependent in dependents]
+                tasks.append(f":lib-multisrc:{theme}:testDebugUnitTest")
+                proof = subprocess.run([str(sandbox / "gradlew"), *tasks], cwd=sandbox)
+                if proof.returncode:
+                    raise ValueError("proof build/tests failed")
+                if subprocess.run(["git", "-C", str(sandbox), "diff", "--quiet", tree, "--", *paths]).returncode:
+                    raise ValueError("build changed candidate sources")
+                accepted[theme] = {"tree": tree, "units": dependents}
+                print(f"Protected Nox multisrc proven: {theme} ({len(dependents)} dependents)")
+            except (ValueError, OSError, subprocess.CalledProcessError) as error:
+                deferred[theme] = dict(entry, reason=str(error))
+                print(f"Protected Nox multisrc deferred: {theme}: {error}")
+            finally:
+                git("worktree", "remove", "--force", str(sandbox), check=False)
+    return accepted, deferred
+
+
+def propagate_multisrc_deferrals(proven, deferred, blocked, bases, upstream_ref):
+    """A source switching themes cannot migrate independently of either theme."""
+    local, upstream = dependency_map(None), dependency_map(upstream_ref)
+    base_commit = git("merge-base", "HEAD", upstream_ref).strip()
+    while True:
+        blocked_units = {unit for theme in blocked for unit in local.get(theme, []) + upstream.get(theme, [])}
+        affected = [theme for theme, candidate in proven.items() if blocked_units.intersection(candidate["units"])]
+        if not affected:
+            return
+        for theme in affected:
+            candidate = proven.pop(theme)
+            blocked.add(theme)
+            deferred[theme] = {
+                "patch_base": bases.get(theme, base_commit),
+                "upstream_ref": git("rev-parse", upstream_ref).strip(),
+                "units": candidate["units"],
+                "reason": "dependent shared with deferred theme",
+            }
+
+
+def update_sync_branch(upstream_ref: str, push: bool) -> None:
+    if push:
+        git("push", "origin", f"{upstream_ref}:refs/heads/{SYNC_BRANCH}")
+    else:
+        print(f"Would update origin/{SYNC_BRANCH} from {upstream_ref}")
+
+
+def ensure_main_unchanged(start_main: str) -> None:
+    """Refuse to publish if main advanced while this sync was running."""
+    git("fetch", "origin")
+    current_main = git("rev-parse", "origin/main").strip()
+    if current_main != start_main:
+        raise RuntimeError(
+            "origin/main advanced during sync; refusing to publish "
+            f"over {start_main} (now {current_main})",
+        )
+
+
+def publish_sync(upstream_ref: str, start_main: str) -> None:
+    """Publish main first, then mirror upstream into the sync branch."""
+    ensure_main_unchanged(start_main)
+    print("Push origin/main: HEAD -> main")
+    git("push", "origin", "HEAD:main")
+    print("Push origin/main: PASS")
+    update_sync_branch(upstream_ref, push=True)
+    print("Push origin/sync: PASS")
+
+
+def print_plan(
+    base: str,
+    upstream_ref: str,
+    upstream_only_units: list[str],
+    preserved_paths: list[str],
+    main_only_units: list[str],
+    conflict_units: list[str],
+    protected_units: list[str],
+) -> None:
+    commits = git("rev-list", "--count", f"{base}..{upstream_ref}").strip()
+
+    print(f"Base: {base}")
+    print(f"Upstream commits: {commits}")
+    print(f"Upstream units to apply: {len(upstream_only_units)}")
+
+    for unit in upstream_only_units:
+        print(f"  upstream: {unit}")
+
+    if preserved_paths:
+        print(f"Preserved .github paths: {len(preserved_paths)}")
+
+    if main_only_units:
+        print(f"Main-only units preserved: {len(main_only_units)}")
+
+        for unit in main_only_units:
+            print(f"  main: {unit}")
+
+    if conflict_units:
+        print(f"Conflict units (modified by both, Nox wins): {len(conflict_units)}")
+        for unit in conflict_units:
+            print(f"  conflict: {unit}")
+
+    if protected_units:
+        print(f"\nProtected Nox extensions: {len(protected_units)}")
+        for unit in protected_units:
+            loc_info = effective_version_code(None, unit)
+            up_info = effective_version_code(upstream_ref, unit)
+            if not loc_info or not up_info:
+                continue
+            loc_raw, loc_base, loc_eff, _ = loc_info
+            up_raw, up_base, up_eff, _ = up_info
+            print(f"{unit}:")
+            print(f"  local raw: {loc_raw}")
+            print(f"  local base: {loc_base}")
+            print(f"  local effective: {loc_eff}")
+            print(f"  upstream raw: {up_raw}")
+            print(f"  upstream base: {up_base}")
+            print(f"  upstream effective: {up_eff}")
+            print(f"  local publication: {loc_info.name} / {loc_info.android_code}")
+            print(f"  upstream publication: {up_info.name} / {up_info.android_code}")
+            if is_lib_version_downgrade(loc_info.lib, up_info.lib):
+                print("  action: block libVersion downgrade")
+            elif up_info.android_code >= loc_info.android_code and up_info.lib != loc_info.lib:
+                print("  action: defer version bump (structural migration required)")
+            elif up_info.android_code >= loc_info.android_code:
+                desired_eff = up_eff + 1
+                new_raw = desired_eff - loc_base
+                print(f"  action: bump local raw -> {new_raw}")
+            else:
+                print(f"  action: keep (local publication ahead)")
+
+
+def structural_conflicts(conflict_units: list[str], upstream_ref: str) -> list[str]:
+    units = []
+    for unit in conflict_units:
+        local = structural_metadata(None, unit)
+        upstream = structural_metadata(upstream_ref, unit)
+        if local is not None and upstream is not None and local != upstream:
+            units.append(unit)
+    return units
+
+
+def unit_matches_upstream_history(
+    unit: str,
+    upstream_ref: str,
+    local_ref: str = "HEAD",
+) -> bool:
+    """Whether the complete unit matches a historical upstream snapshot.
+
+    Structural application restores an entire extension directory.  Comparing
+    only ``src`` would therefore mistake Nox changes in Gradle, assets, or
+    resources for an upstream snapshot and silently overwrite them.
+    """
+    return matching_upstream_history_revision(unit, upstream_ref, local_ref) is not None
+
+
+def matching_upstream_history_revision(
+    unit: str,
+    upstream_ref: str,
+    local_ref: str = "HEAD",
+) -> str | None:
+    """Return the upstream snapshot matching a complete local unit."""
+    for revision in git("log", "--format=%H", upstream_ref, "--", unit).splitlines():
+        if unit_matches_ref_except_version_code(unit, revision, local_ref):
+            return revision
+    return None
+
+
+def unit_matches_ref_except_version_code(
+    unit: str,
+    reference: str,
+    local_ref: str = "HEAD",
+) -> bool:
+    """Whether a complete unit differs from a ref only by ``versionCode``."""
+    local_tree = git("rev-parse", f"{local_ref}:{unit}", check=False).strip()
+    if not local_tree:
+        return False
+    if git("rev-parse", f"{reference}:{unit}", check=False).strip() == local_tree:
+        return True
+    changed_paths = git(
+        "diff", "--name-only", reference, local_ref, "--", unit,
+    ).splitlines()
+    gradle_path = f"{unit}/build.gradle.kts"
+    if changed_paths != [gradle_path]:
+        return False
+    # versionCode is sync-controlled publication metadata. Every other Gradle
+    # setting and every other file remains functional unit content.
+    reference_gradle = _read_file_text(reference, gradle_path)
+    local_gradle = _read_file_text(local_ref, gradle_path)
+    if reference_gradle is None or local_gradle is None:
+        return False
+    return _VERSION_CODE_RE.sub(r"\1<versionCode>", reference_gradle) == _VERSION_CODE_RE.sub(
+        r"\1<versionCode>", local_gradle,
+    )
+
+
+def has_newer_upstream_for_version_only_unit(
+    unit: str,
+    upstream_ref: str,
+    local_ref: str = "HEAD",
+) -> bool:
+    """Whether a version-only local divergence masks newer upstream content."""
+    if not unit.startswith("src/"):
+        return False
+    local_info = effective_version_code(local_ref, unit)
+    upstream_info = effective_version_code(upstream_ref, unit)
+    if local_info is None or upstream_info is None:
+        return False
+    if is_lib_version_downgrade(local_info.lib, upstream_info.lib):
+        return False
+    matched_revision = matching_upstream_history_revision(unit, upstream_ref, local_ref)
+    if matched_revision is None or unit_matches_ref_except_version_code(unit, upstream_ref, local_ref):
+        return False
+    matched_info = effective_version_code(matched_revision, unit)
+    if matched_info is None or is_lib_version_downgrade(matched_info.lib, upstream_info.lib):
+        return False
+    return upstream_info.android_code > matched_info.android_code
+
+
+def unprotected_structural_migrations(units: list[str], protected: list[str], upstream_ref: str) -> set[str]:
+    return {
+        unit for unit in structural_conflicts(units, upstream_ref)
+        if unit.startswith("src/") and unit not in protected
+        and (
+            local_version_ahead_of_upstream(unit, upstream_ref) is None
+            or has_newer_upstream_for_version_only_unit(unit, upstream_ref)
+        )
+    }
+
+
+def apply_units(
+    upstream_ref: str,
+    units: list[str],
+    conflict_units: set[str],
+    protected_units: list[str],
+    structural_units: list[str],
+    blocked_themes: set[str],
+    deferred: dict[str, dict[str, object]],
+    proven_multisrc: dict[str, dict[str, object]] | None = None,
+) -> list[str]:
+    """Apply one sync as an atomic working-tree transaction.
+
+    All validation that can happen before the merge is performed by the inner
+    function.  The outer guard still aborts an in-progress merge on any later
+    exception so a failed structural migration cannot leave an index or
+    working tree half-applied.
+    """
+    try:
+        return _apply_units(
+            upstream_ref,
+            units,
+            conflict_units,
+            protected_units,
+            structural_units,
+            blocked_themes,
+            deferred,
+            proven_multisrc,
+        )
+    except BaseException:
+        if merge_in_progress():
+            git("merge", "--abort", check=False)
+        raise
+
+
+def _apply_units(
+    upstream_ref: str,
+    units: list[str],
+    conflict_units: set[str],
+    protected_units: list[str],
+    structural_units: list[str],
+    blocked_themes: set[str],
+    deferred: dict[str, dict[str, object]],
+    proven_multisrc: dict[str, dict[str, object]] | None = None,
+) -> list[str]:
+    proven_multisrc = proven_multisrc or {}
+    base = git("merge-base", "HEAD", upstream_ref).strip()
+    for theme in protected_multisrc_bases(base, upstream_ref):
+        if f"lib-multisrc/{theme}" in units and theme not in blocked_themes and theme not in proven_multisrc:
+            raise RuntimeError(f"Unproven protected multisrc: {theme}")
+    proven_paths = {
+        path for theme, candidate in proven_multisrc.items()
+        for path in [f"lib-multisrc/{theme}", *candidate["units"]]
+    }
+    structural_units = sorted(set(structural_units) | unprotected_structural_migrations(
+        units, protected_units, upstream_ref,
+    ))
+    previous_versions = {
+        unit: effective_version_code(None, unit)
+        for unit in set(units) | proven_paths | set(structural_units) if unit.startswith("src/")
+    }
+
+    structural_downgrades = []
+    for unit in structural_units:
+        if not unit.startswith("src/"):
+            continue
+        previous_info = previous_versions.get(unit)
+        upstream_info = effective_version_code(upstream_ref, unit)
+        if (
+            previous_info is not None
+            and upstream_info is not None
+            and is_lib_version_downgrade(previous_info.lib, upstream_info.lib)
+        ):
+            structural_downgrades.append(
+                f"{unit} ({previous_info.name} -> {upstream_info.name})",
+            )
+    if structural_downgrades:
+        raise RuntimeError(
+            "Structural libVersion downgrade blocked before merge: "
+            + ", ".join(structural_downgrades),
+        )
+
+    git("merge", "--no-ff", "--no-commit", "-s", "ours", upstream_ref)
+
+    local_deps = dependency_map(None)
+    upstream_deps = dependency_map(upstream_ref)
+    blocked_theme_extensions = {
+        ext
+        for theme in blocked_themes
+        for ext in (local_deps.get(theme, []) + upstream_deps.get(theme, []))
+    }
+    protected_set = set(protected_units)
+    version_only_units = {
+        unit for unit in units
+        if unit not in protected_set and has_newer_upstream_for_version_only_unit(unit, upstream_ref)
+    }
+    base = git("merge-base", "HEAD", upstream_ref).strip()
+
+    validation_units = set(structural_units) - blocked_theme_extensions
+
+    # 1. Apply upstream units (except conflict units where Nox wins, and deferred themes/extensions)
+    for unit in units:
+        if unit in proven_paths:
+            continue
+        # A protected source is only changed through a separately proven
+        # multisrc candidate. It must never enter a generic full restore.
+        if unit in protected_set:
+            print(f"Protected Nox unit: preserving local {unit}")
+            continue
+        if unit in blocked_theme_extensions:
+            print(f"Deferred structural migration (atomic with theme): {unit}")
+            continue
+        if unit in structural_units and not unit.startswith("lib-multisrc/"):
+            previous_info = previous_versions.get(unit)
+            unit_divergent = subprocess.run(
+                ["git", "diff", "--quiet", base, "HEAD", "--", unit],
+            ).returncode != 0
+            # A full restore is safe only for an entire historical upstream
+            # unit. Otherwise retain all local files and merge selectors; the
+            # build validation below is the proof that this reconciliation is
+            # compatible before the transaction can be committed.
+            preserve_local_unit = unit_divergent and not unit_matches_upstream_history(unit, upstream_ref)
+            if preserve_local_unit:
+                print(f"Preserving local files outside upstream history: {unit}")
+                changed = merge_structural_metadata(unit, upstream_ref)
+            else:
+                git("rm", "-r", "--ignore-unmatch", "--quiet", "--", unit)
+                git("restore", f"--source={upstream_ref}", "--staged", "--worktree", "--", unit)
+                changed = True
+            version_changed = bump_after_structural_change(unit, previous_info) if changed else False
+            if changed or version_changed:
+                git("add", "--", f"{unit}/build.gradle.kts")
+            continue
+        # Earlier units may have already replaced this source's multisrc base.
+        downgrade = local_version_ahead_of_upstream(unit, upstream_ref, local_ref="HEAD")
+        if downgrade is not None and unit not in version_only_units:
+            local_info, upstream_info = downgrade
+            print(
+                f"Version guard: preserving {unit}; downgrade blocked "
+                f"(local {local_info.name} / {local_info.android_code} > "
+                f"upstream {upstream_info.name} / {upstream_info.android_code})",
+            )
+            continue
+        if unit.startswith("lib-multisrc/") and unit.split("/", 1)[1] in blocked_themes:
+            print(f"Deferred structural migration: {unit}")
+            continue
+        if unit in conflict_units and not unit.startswith("lib-multisrc/"):
+            if unit in structural_units:
+                previous_info = effective_version_code(None, unit)
+                changed = merge_structural_metadata(unit, upstream_ref)
+                version_changed = bump_after_structural_change(unit, previous_info) if changed else False
+                deleted = subprocess.run(
+                    ["git", "diff", "--name-only", "--diff-filter=D", base, upstream_ref, "--", unit],
+                    capture_output=True,
+                    text=True,
+                ).stdout.splitlines()
+                for df in deleted:
+                    if df.strip() and Path(df.strip()).exists():
+                        git("rm", "--quiet", "--", df.strip())
+                if changed or version_changed:
+                    git("add", "--", f"{unit}/build.gradle.kts")
+            if unit not in version_only_units:
+                continue
+
+        print(f"Applying {unit}")
+        git("rm", "-r", "--ignore-unmatch", "--quiet", "--", unit)
+
+        if path_exists(upstream_ref, unit):
+            git("restore", f"--source={upstream_ref}", "--staged", "--worktree", "--", unit)
+            if unit.startswith("src/"):
+                validation_units.add(unit)
+                if bump_after_structural_change(unit, previous_versions.get(unit)):
+                    git("add", "--", f"{unit}/build.gradle.kts")
+
+    bumped = []
+    for theme, candidate in proven_multisrc.items():
+        for unit in [f"lib-multisrc/{theme}", *candidate["units"]]:
+            # This tree was built successfully with the upstream multisrc metadata
+            # and the preserved Nox source. Apply it before the generic version
+            # guard, which must not block an atomic structural migration.
+            git("rm", "-r", "--ignore-unmatch", "--quiet", "--", unit)
+            git("restore", f"--source={candidate['tree']}", "--staged", "--worktree", "--", unit)
+            if unit.startswith("src/"):
+                validation_units.add(unit)
+            if unit in previous_versions and bump_after_structural_change(unit, previous_versions[unit]):
+                git("add", "--", f"{unit}/build.gradle.kts")
+                current_info = effective_version_code(None, unit)
+                if current_info:
+                    bumped.append(f"{unit} -> versionCode={current_info.raw}")
+
+    # Deferred themes may no longer appear in base..upstream after an ours merge.
+    # Their protected extensions must still receive their proven selector migration.
+    for unit in structural_units:
+        if unit in proven_paths:
+            continue
+        if unit in protected_set:
+            print(f"Protected Nox unit: preserving local {unit}")
+            continue
+        downgrade = local_version_ahead_of_upstream(unit, upstream_ref)
+        if downgrade is not None and not has_newer_upstream_for_version_only_unit(unit, upstream_ref):
+            local_info, upstream_info = downgrade
+            print(
+                f"Version guard: preserving {unit}; downgrade blocked "
+                f"(local {local_info.name} / {local_info.android_code} > "
+                f"upstream {upstream_info.name} / {upstream_info.android_code})",
+            )
+            continue
+        if unit in conflict_units or unit in blocked_theme_extensions:
+            continue
+        previous_info = effective_version_code(None, unit)
+        changed = merge_structural_metadata(unit, upstream_ref)
+        version_changed = bump_after_structural_change(unit, previous_info) if changed else False
+        deleted = subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=D", base, upstream_ref, "--", unit],
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+        for df in deleted:
+            if df.strip() and Path(df.strip()).exists():
+                git("rm", "--quiet", "--", df.strip())
+        if changed or version_changed:
+            git("add", "--", f"{unit}/build.gradle.kts")
+
+    # 2. Version Guard on all protected Nox units
+    deferred_units = {str(unit) for entry in deferred.values() for unit in entry.get("units", [])}
+    for unit in protected_units:
+        if not path_exists(upstream_ref, unit):
+            print(f"Version guard: preserving protected {unit}; unit is absent upstream")
+            continue
+        if unit in deferred_units or unit in blocked_theme_extensions:
+            print(f"Version guard: deferred {unit}; metadata and version preserved")
+            continue
+        res = bump_version_code_if_needed(unit, upstream_ref)
+        if res is not None:
+            loc_raw, _, _, _, _, _, new_raw = res
+            git("add", "--", f"{unit}/build.gradle.kts")
+            bumped.append(f"{unit} -> versionCode={new_raw}")
+            validation_units.add(unit)
+            print(f"Version guard: bumped {unit} (versionCode {loc_raw} -> {new_raw})")
+        else:
+            print(f"Version guard: {unit} unchanged")
+
+    if write_deferred_migrations(deferred):
+        git("add", "--", str(DEFERRED_MIGRATIONS_FILE))
+
+    git("diff", "--check")
+
+    dependency_errors = validate_local_project_dependencies()
+    if dependency_errors:
+        print("Local project dependency validation failed:")
+        for error in dependency_errors:
+            print(f"  - {error}")
+        git("merge", "--abort", check=False)
+        sys.exit(1)
+
+    errors = validate_multisrc_compatibility()
+    if errors:
+        print("Structural compatibility validation failed:")
+        for error in errors:
+            print(f"  - {error}")
+        git("merge", "--abort", check=False)
+        sys.exit(1)
+
+    try:
+        validate_affected_builds(sorted(validation_units))
+    except RuntimeError as error:
+        print(str(error))
+        git("merge", "--abort", check=False)
+        sys.exit(1)
+
+    commit_msg = "Sync upstream"
+    if bumped:
+        commit_msg += "\n\nNox-resolved conflicts touched by upstream:\n" + "\n".join(f"  - {b}" for b in bumped)
+
+    if not has_staged_changes() and not merge_in_progress():
+        print("No sync changes to commit")
+        return bumped
+
+    git("commit", "-m", commit_msg)
+    return bumped
+
+
+def _write_step_summary(protected_units: list[str], bumped: list[str]) -> None:
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not summary_path or not protected_units:
+        return
+    lines = ["\n## Nox Protected Extensions\n\n"]
+    for unit in protected_units:
+        tag = next((b for b in bumped if b.startswith(unit)), None)
+        if tag:
+            ver = tag.split("=")[1]
+            lines.append(f"- `{unit}` (kept Nox code, bumped to `{ver}`)\n")
+        else:
+            lines.append(f"- `{unit}` (kept Nox code, version already ahead)\n")
+    with open(summary_path, "a") as f:
+        f.writelines(lines)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--push", action="store_true")
+    parser.add_argument("--apply-no-push", action="store_true")
+    args = parser.parse_args()
+
+    if sum((args.dry_run, args.push, args.apply_no_push)) > 1:
+        print("Use only one of --dry-run, --push, or --apply-no-push")
+        sys.exit(1)
+
+    ensure_clean_tree()
+    ensure_upstream_remote()
+
+    git("fetch", "origin")
+    start_main = git("rev-parse", "origin/main").strip()
+    sync_head = git("rev-parse", "HEAD").strip()
+    if subprocess.run(
+        ["git", "merge-base", "--is-ancestor", start_main, sync_head],
+        capture_output=True,
+    ).returncode != 0:
+        raise RuntimeError(
+            "HEAD is not based on the fetched origin/main; refusing to publish",
+        )
+    git("fetch", UPSTREAM_REMOTE, UPSTREAM_BRANCH)
+
+    upstream_ref = f"{UPSTREAM_REMOTE}/{UPSTREAM_BRANCH}"
+    base = git("merge-base", "HEAD", upstream_ref).strip()
+
+    upstream_entries = changed_entries(base, upstream_ref)
+    upstream_units, preserved_paths = collect_units(upstream_entries)
+
+    main_entries = changed_entries(base, "HEAD")
+    main_units, _ = collect_units(main_entries)
+
+    conflict_units = sorted(set(upstream_units) & set(main_units))
+    conflict_set = set(conflict_units)
+    main_only_units = sorted(set(main_units) - set(upstream_units))
+    upstream_only_units = sorted(set(upstream_units) - conflict_set)
+    protected_units = get_protected_nox_units(base, upstream_ref)
+    structural_units = structural_conflicts(conflict_units, upstream_ref)
+    for theme in load_deferred_migrations():
+        unit = f"lib-multisrc/{theme}"
+        if path_exists(upstream_ref, unit):
+            upstream_units.append(unit)
+    upstream_units = sorted(set(upstream_units))
+    conflict_units = sorted(set(upstream_units) & set(main_units))
+    conflict_set = set(conflict_units)
+    main_only_units = sorted(set(main_units) - set(upstream_units))
+    upstream_only_units = sorted(set(upstream_units) - conflict_set)
+    preflight, preflight_blocked = preflight_multisrc(base, upstream_ref, protected_units)
+    protected_multisrc = protected_multisrc_bases(base, upstream_ref)
+    for theme in protected_multisrc:
+        print(f"Protected Nox multisrc: lib-multisrc/{theme}")
+
+    print_plan(
+        base,
+        upstream_ref,
+        upstream_only_units,
+        preserved_paths,
+        main_only_units,
+        conflict_units,
+        protected_units,
+    )
+    if structural_units:
+        print(f"Structural conflicts (metadata from upstream, Nox code preserved): {len(structural_units)}")
+        for unit in structural_units:
+            print(f"  structural: {unit}")
+
+    if preflight:
+        print("Multisrc pre-flight:")
+        for theme, rows in preflight.items():
+            local_multi = multisrc_metadata(None, theme)
+            upstream_multi = multisrc_metadata(upstream_ref, theme)
+            print(f"  lib-multisrc/{theme}: local={local_multi}, upstream={upstream_multi}")
+            for row in rows:
+                print(
+                    "    {unit}: protected={protected}, local libVersion={local_libVersion}, "
+                    "upstream libVersion={upstream_libVersion}, new multisrc={multisrc_libVersion}, "
+                    "libVersion downgrade={libVersion_downgrade}, "
+                    "source divergent={source_divergent}, unit divergent={unit_divergent}, "
+                    "migration required={migration_required}, "
+                    "migration supported={migration_supported}".format(**row),
+                )
+
+    # Determine effective differences between HEAD and upstream_ref
+    diff_entries = changed_entries("HEAD", upstream_ref)
+    diff_units, _ = collect_units(diff_entries)
+    effective_diff = pending_sync_units(diff_units, protected_units, upstream_ref)
+
+    if not upstream_units and not load_deferred_migrations() and not effective_diff:
+        print("No upstream changes to apply")
+        return
+        
+    if not upstream_units and effective_diff:
+        print(f"Sync branch is up to date, but main is missing {len(effective_diff)} updates. Proceeding.")
+        upstream_units = effective_diff
+        conflict_set = set()
+        upstream_only_units = effective_diff
+
+    # Recover structural updates skipped by an earlier ours merge even when new
+    # unrelated upstream changes are also pending.
+    upstream_units = sorted(set(upstream_units) | unprotected_structural_migrations(
+        effective_diff, protected_units, upstream_ref,
+    ))
+
+    if args.dry_run or not (args.push or args.apply_no_push):
+        print("Dry run only; no changes were applied")
+        return
+
+    proven, multisrc_deferred = prove_protected_multisrc(base, upstream_ref, protected_units, preflight_blocked)
+    verified_blocked, verified_proven = verify_migration_plan(
+        {theme: rows for theme, rows in preflight.items() if theme not in preflight_blocked and theme not in protected_multisrc},
+        upstream_ref,
+    )
+    blocked = preflight_blocked | set(multisrc_deferred) | verified_blocked
+    proven.update(verified_proven)
+    deferred = deferred_state(preflight, blocked, upstream_ref)
+    deferred.update(multisrc_deferred)
+    propagate_multisrc_deferrals(proven, deferred, blocked, protected_multisrc, upstream_ref)
+    if blocked:
+        print("Deferred migrations (proof build failed): " + ", ".join(sorted(blocked)))
+    migration_units = {
+        str(row["unit"])
+        for theme, rows in preflight.items() if theme not in blocked
+        for row in rows if row["migration_required"]
+    }
+    # Only pre-flight-approved protected selector migrations may be applied.
+    structural_units = sorted(migration_units)
+    bumped = apply_units(
+        upstream_ref,
+        upstream_units,
+        conflict_set,
+        protected_units,
+        structural_units,
+        blocked,
+        deferred,
+        proven,
+    )
+    _write_step_summary(protected_units, bumped)
+    print(f"Commit Sync upstream: {git('rev-parse', 'HEAD').strip()}")
+    if args.push:
+        try:
+            publish_sync(upstream_ref, start_main)
+        except RuntimeError as error:
+            print(f"Publish aborted: {error}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        print("Applied and validated locally; no push requested")
+
+
+if __name__ == "__main__":
+    main()

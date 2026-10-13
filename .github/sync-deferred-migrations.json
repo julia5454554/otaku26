@@ -1,0 +1,85 @@
+{
+  "themes": {
+    "clipstudioreader": {
+      "patch_base": "63ac848765afc2ac2eb8d4f8f1d65203b2f13022",
+      "reason": "unsupported structural migration",
+      "units": [
+        "src/ja/comicfesta",
+        "src/ja/firecross"
+      ],
+      "upstream_ref": "10f06eb833af5990bc5470c84c5e93edc159ad4e"
+    },
+    "gattsu": {
+      "patch_base": "60bc15ec9c13b3a4302bc54ca7b9fa892fdae726",
+      "reason": "incompatible dependent selector: src/pt/hentaiseason",
+      "units": [
+        "src/pt/hentaiseason",
+        "src/pt/hentaitokyo",
+        "src/pt/universohentai"
+      ],
+      "upstream_ref": "10f06eb833af5990bc5470c84c5e93edc159ad4e"
+    },
+    "gigaviewer": {
+      "patch_base": "60bc15ec9c13b3a4302bc54ca7b9fa892fdae726",
+      "reason": "unsupported structural migration",
+      "units": [
+        "src/ja/comicaction",
+        "src/ja/comicborder",
+        "src/ja/comicdays",
+        "src/ja/comicearthstar",
+        "src/ja/comicgardo",
+        "src/ja/comicogyaaa",
+        "src/ja/comicseasons",
+        "src/ja/comictrail",
+        "src/ja/comicyours",
+        "src/ja/comiplex",
+        "src/ja/feelweb",
+        "src/ja/ichicomi",
+        "src/ja/kuragebunch",
+        "src/ja/magcomi",
+        "src/ja/mangatimesquare",
+        "src/ja/ourfeel",
+        "src/ja/shonenjumpplus",
+        "src/ja/sundaywebevery",
+        "src/ja/tonarinoyoungjump",
+        "src/ja/zenon"
+      ],
+      "upstream_ref": "10f06eb833af5990bc5470c84c5e93edc159ad4e"
+    },
+    "greenshit": {
+      "patch_base": "60bc15ec9c13b3a4302bc54ca7b9fa892fdae726",
+      "reason": "incompatible dependent selector: src/pt/maidscan",
+      "units": [
+        "src/pt/maidscan",
+        "src/pt/vegitoons",
+        "src/pt/verdinha"
+      ],
+      "upstream_ref": "10f06eb833af5990bc5470c84c5e93edc159ad4e"
+    },
+    "hentaihand": {
+      "patch_base": "bdcf84f1c687e1074a1b3099daaf48f3f9d71e22",
+      "reason": "functional conflict: lib-multisrc/hentaihand/src/eu/kanade/tachiyomi/multisrc/hentaihand/HentaiHand.kt",
+      "units": [
+        "src/all/hentaihand",
+        "src/all/nhentaicom"
+      ],
+      "upstream_ref": "10f06eb833af5990bc5470c84c5e93edc159ad4e"
+    },
+    "madtheme": {
+      "patch_base": "bdcf84f1c687e1074a1b3099daaf48f3f9d71e22",
+      "reason": "unsupported structural migration",
+      "units": [
+        "src/en/kaliscancom"
+      ],
+      "upstream_ref": "10f06eb833af5990bc5470c84c5e93edc159ad4e"
+    },
+    "spicytheme": {
+      "patch_base": "bdcf84f1c687e1074a1b3099daaf48f3f9d71e22",
+      "reason": "unsupported structural migration",
+      "units": [
+        "src/es/spicyscan"
+      ],
+      "upstream_ref": "10f06eb833af5990bc5470c84c5e93edc159ad4e"
+    }
+  }
+}
