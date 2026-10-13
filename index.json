@@ -8,6 +8,426 @@
   "extensionList": {
     "extensions": [
       {
+        "name": "ComicsHentai",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.comicshentai",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.comicshentai-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.comicshentai-v1.4.1.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104001",
+        "versionName": "1.4.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "3957032083773255937",
+            "name": "ComicsHentai",
+            "language": "pt-BR",
+            "homeUrl": "https://thehentaicomics.com"
+          }
+        ]
+      },
+      {
+        "name": "Erosberry",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.erosberry",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.erosberry-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.erosberry-v1.4.1.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104001",
+        "versionName": "1.4.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "4668782072433943229",
+            "name": "Erosberry",
+            "language": "pt-BR",
+            "homeUrl": "https://www.erosberry.com"
+          }
+        ]
+      },
+      {
+        "name": "HentaiComics",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.hentaicomics",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.hentaicomics-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.hentaicomics-v1.4.1.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104001",
+        "versionName": "1.4.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "2906091074097491757",
+            "name": "HentaiComics",
+            "language": "pt-BR",
+            "homeUrl": "https://hentaicomics.biz"
+          }
+        ]
+      },
+      {
+        "name": "HentaiGratis",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.hentaigratis",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.hentaigratis-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.hentaigratis-v1.4.1.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104001",
+        "versionName": "1.4.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "899033274986409562",
+            "name": "HentaiGratis",
+            "language": "pt-BR",
+            "homeUrl": "https://hentaigratis.biz"
+          }
+        ]
+      },
+      {
+        "name": "HentaiHq",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.hentaihq",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.hentaihq-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.hentaihq-v1.4.1.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104001",
+        "versionName": "1.4.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "8450425695086985208",
+            "name": "HentaiHq",
+            "language": "pt-BR",
+            "homeUrl": "https://hentaihq.net"
+          }
+        ]
+      },
+      {
+        "name": "Hentaiteca",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.hentaiteca",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.hentaiteca-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.hentaiteca-v1.4.1.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104001",
+        "versionName": "1.4.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "3590546643320590322",
+            "name": "Hentaiteca",
+            "language": "pt-BR",
+            "homeUrl": "https://hentaiteca.online"
+          }
+        ]
+      },
+      {
+        "name": "Hot Porn Photos",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.hotpornphotos",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.hotpornphotos-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.hotpornphotos-v1.4.1.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104001",
+        "versionName": "1.4.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "3358360006957949297",
+            "name": "Hot Porn Photos",
+            "language": "pt-BR",
+            "homeUrl": "https://www.hotpornphotos.com"
+          }
+        ]
+      },
+      {
+        "name": "HqErotica",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.hqerotica",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.hqerotica-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.hqerotica-v1.4.1.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104001",
+        "versionName": "1.4.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "6138604025747351675",
+            "name": "HqErotica",
+            "language": "pt-BR",
+            "homeUrl": "https://hqerotica.com"
+          }
+        ]
+      },
+      {
+        "name": "HqErotico",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.hqerotico",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.hqerotico-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.hqerotico-v1.4.1.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104001",
+        "versionName": "1.4.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "7826376963299193648",
+            "name": "HqErotico",
+            "language": "pt-BR",
+            "homeUrl": "https://hqerotico.com"
+          }
+        ]
+      },
+      {
+        "name": "MeuHentai",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.meuhentai",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.meuhentai-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.meuhentai-v1.4.1.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104001",
+        "versionName": "1.4.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "4000641053179490601",
+            "name": "MeuHentai",
+            "language": "pt-BR",
+            "homeUrl": "https://meuhentai.com"
+          }
+        ]
+      },
+      {
+        "name": "Muito Hentai",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.muitohentai",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.muitohentai-v1.4.4.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/src/pt/muitohentai/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.muitohentai-v1.4.4.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104004",
+        "versionName": "1.4.4",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "1062606379654091909",
+            "name": "Muito Hentai",
+            "language": "pt-BR",
+            "homeUrl": "https://www.muitohentai.com"
+          }
+        ]
+      },
+      {
+        "name": "Mundo Hentai",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.mundohentai",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.mundohentai-v1.4.10.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/src/pt/mundohentai/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.mundohentai-v1.4.10.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104010",
+        "versionName": "1.4.10",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "141171756957474060",
+            "name": "Mundo Hentai",
+            "language": "pt-BR",
+            "homeUrl": "https://mundohentaioficial.com"
+          }
+        ]
+      },
+      {
+        "name": "NHentai Net BR",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.nhentainetbr",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.nhentainetbr-v1.6.3.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.nhentainetbr-v1.6.3.jar"
+        },
+        "extensionLib": "1.6",
+        "versionCode": "106003",
+        "versionName": "1.6.3",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "8958319666690516945",
+            "name": "NHentai Net BR",
+            "language": "pt-BR",
+            "homeUrl": "https://nhentai.net.br"
+          }
+        ]
+      },
+      {
+        "name": "Nudelas",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.nudelas",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.nudelas-v1.4.2.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.nudelas-v1.4.2.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104002",
+        "versionName": "1.4.2",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "6139849776075718355",
+            "name": "Nudelas",
+            "language": "pt-BR",
+            "homeUrl": "https://www.nudelas.com"
+          }
+        ]
+      },
+      {
+        "name": "PirataHq",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.piratahq",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.piratahq-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.piratahq-v1.4.1.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104001",
+        "versionName": "1.4.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "5674869470755317813",
+            "name": "PirataHq",
+            "language": "pt-BR",
+            "homeUrl": "https://piratahq.com.br"
+          }
+        ]
+      },
+      {
+        "name": "QuadrinhosEroticosBlog",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.quadrinhoseroticosblog",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.quadrinhoseroticosblog-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.quadrinhoseroticosblog-v1.4.1.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104001",
+        "versionName": "1.4.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "7704305902689541726",
+            "name": "QuadrinhosEroticosBlog",
+            "language": "pt-BR",
+            "homeUrl": "https://www.quadrinhoseroticos.blog"
+          }
+        ]
+      },
+      {
+        "name": "Revistas e Quadrinhos",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.revistasequadrinhos",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.revistasequadrinhos-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/src/pt/revistasequadrinhos/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.revistasequadrinhos-v1.4.1.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104001",
+        "versionName": "1.4.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "1455091782657313638",
+            "name": "Revistas e Quadrinhos",
+            "language": "pt",
+            "homeUrl": "https://revistasequadrinhos.com"
+          }
+        ]
+      },
+      {
+        "name": "SuperHentaiBlog",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.superhentaiblog",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.superhentaiblog-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.superhentaiblog-v1.4.1.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104001",
+        "versionName": "1.4.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "7915660753266811484",
+            "name": "SuperHentaiBlog",
+            "language": "pt-BR",
+            "homeUrl": "https://superhentai.blog"
+          }
+        ]
+      },
+      {
+        "name": "SuperHqDeSexo",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.superhqdesexo",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.superhqdesexo-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.superhqdesexo-v1.4.1.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104001",
+        "versionName": "1.4.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "6645956780165449703",
+            "name": "SuperHqDeSexo",
+            "language": "pt-BR",
+            "homeUrl": "https://superhqdesexo.com"
+          }
+        ]
+      },
+      {
+        "name": "Super Hqs",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.superhqs",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.superhqs-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.superhqs-v1.4.1.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104001",
+        "versionName": "1.4.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "6520634301087159896",
+            "name": "Super Hqs",
+            "language": "pt-BR",
+            "homeUrl": "https://superhq.com.br"
+          }
+        ]
+      },
+      {
         "name": "3HentaiNetBr",
         "packageName": "eu.kanade.tachiyomi.extension.pt.threehentainetbr",
         "resources": {
