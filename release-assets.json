@@ -79,6 +79,16 @@
       "sha256": "faf2d8b95adc8481e5f26f617993d17392667c3aa22bb3619175d846f58e80ca"
     }
   },
+  "eu.kanade.tachiyomi.extension.pt.hentaiputa": {
+    "apk": {
+      "name": "tachiyomi-pt.hentaiputa-v1.4.1.apk",
+      "sha256": "e110982935e6582abaad7d58dd7ece747559181abd5ecf10289667fa6b07e8f5"
+    },
+    "jar": {
+      "name": "tachiyomi-pt.hentaiputa-v1.4.1.jar",
+      "sha256": "88d8607d52ff25d9be75259f92251a3f97505eb678f36d7173c2a32daacb2e81"
+    }
+  },
   "eu.kanade.tachiyomi.extension.pt.hentaiseason": {
     "apk": {
       "name": "tachiyomi-pt.hentaiseason-v1.4.7.apk",
