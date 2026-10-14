@@ -347,9 +347,9 @@
         "name": "Quadrinhos de Sexo",
         "packageName": "eu.kanade.tachiyomi.extension.pt.quadrinhosdesexo",
         "resources": {
-          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/5bd9c94/tachiyomi-pt.quadrinhosdesexo-v1.6.1.apk",
-          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/src/pt/quadrinhosdesexo/res/mipmap-xhdpi/ic_launcher.png",
-          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/5bd9c94/tachiyomi-pt.quadrinhosdesexo-v1.6.1.jar"
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/7748034/tachiyomi-pt.quadrinhosdesexo-v1.6.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/7748034/tachiyomi-pt.quadrinhosdesexo-v1.6.1.jar"
         },
         "extensionLib": "1.6",
         "versionCode": "106001",
