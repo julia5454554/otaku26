@@ -59,6 +59,16 @@
       "sha256": "be42b7510c2418fd2bb7fe8a4496c8f829159a252981deb4434f6b2ab3e95e5e"
     }
   },
+  "eu.kanade.tachiyomi.extension.pt.hentaidatia": {
+    "apk": {
+      "name": "tachiyomi-pt.hentaidatia-v1.4.1.apk",
+      "sha256": "fe75a06da06c3f65ee6fcce2574b56dddd9b6b8293cabdf5e6c07330d63df7a3"
+    },
+    "jar": {
+      "name": "tachiyomi-pt.hentaidatia-v1.4.1.jar",
+      "sha256": "7acd95c0d8cf1c0c18c556a28c2895025fcdc2e5ff54c933c2652caadd7e1b86"
+    }
+  },
   "eu.kanade.tachiyomi.extension.pt.hentaigratis": {
     "apk": {
       "name": "tachiyomi-pt.hentaigratis-v1.4.1.apk",
@@ -87,6 +97,16 @@
     "jar": {
       "name": "tachiyomi-pt.hentaiputa-v1.4.1.jar",
       "sha256": "88d8607d52ff25d9be75259f92251a3f97505eb678f36d7173c2a32daacb2e81"
+    }
+  },
+  "eu.kanade.tachiyomi.extension.pt.hentaisblog": {
+    "apk": {
+      "name": "tachiyomi-pt.hentaisblog-v1.4.1.apk",
+      "sha256": "0f04e9797145360a6c6437f6036d6799dad0d2099e709244867baae63a6d011b"
+    },
+    "jar": {
+      "name": "tachiyomi-pt.hentaisblog-v1.4.1.jar",
+      "sha256": "44cd9e7b9313e712eedbd5d627168b4d807c30144949fddbff3de1871de71d60"
     }
   },
   "eu.kanade.tachiyomi.extension.pt.hentaiseason": {
@@ -299,6 +319,16 @@
       "sha256": "41d185e45d0b4485fc9517d6abef67a5196c0e7fb715bb7de1ac439ef594ae29"
     }
   },
+  "eu.kanade.tachiyomi.extension.pt.superhq": {
+    "apk": {
+      "name": "tachiyomi-pt.superhq-v1.4.1.apk",
+      "sha256": "cfb6b363145885620314f7f5668860bea57c6e250eb92be235665628df0a1bb4"
+    },
+    "jar": {
+      "name": "tachiyomi-pt.superhq-v1.4.1.jar",
+      "sha256": "f0a09696db70d4096f94c2fb921983920e5ddf8ce7390bdc70649d297ae961dd"
+    }
+  },
   "eu.kanade.tachiyomi.extension.pt.superhqdesexo": {
     "apk": {
       "name": "tachiyomi-pt.superhqdesexo-v1.4.1.apk",
@@ -327,6 +357,16 @@
     "jar": {
       "name": "tachiyomi-pt.tankouhentai-v1.6.56.jar",
       "sha256": "a5e4dfb885276687f6386da03082ddd78d5f57bcf872b8e213d58f265dc231ce"
+    }
+  },
+  "eu.kanade.tachiyomi.extension.pt.thehentai": {
+    "apk": {
+      "name": "tachiyomi-pt.thehentai-v1.6.1.apk",
+      "sha256": "3dab12443504e4672b38592cffc908cc23527004d5452e12d0408812c26749fd"
+    },
+    "jar": {
+      "name": "tachiyomi-pt.thehentai-v1.6.1.jar",
+      "sha256": "9bbedf479c548b7aac2effb193e76084661c6eaa8dc6192c314970319f810d8b"
     }
   },
   "eu.kanade.tachiyomi.extension.pt.threehentainetbr": {
