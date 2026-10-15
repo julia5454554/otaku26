@@ -344,6 +344,27 @@
         ]
       },
       {
+        "name": "NHentai BR",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.nhentaibr",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/a94ea55/tachiyomi-pt.nhentaibr-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/a94ea55/tachiyomi-pt.nhentaibr-v1.4.1.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104001",
+        "versionName": "1.4.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "1684983628719715809",
+            "name": "NHentai BR",
+            "language": "pt-BR",
+            "homeUrl": "https://nhentaibr.com"
+          }
+        ]
+      },
+      {
         "name": "NHentai Net BR",
         "packageName": "eu.kanade.tachiyomi.extension.pt.nhentainetbr",
         "resources": {

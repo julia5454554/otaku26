@@ -249,6 +249,16 @@
       "sha256": "3779774d2dd80206a19d7d423cd5e1f45b2c67dbbfe9c0499b0aeeeacb5cdf55"
     }
   },
+  "eu.kanade.tachiyomi.extension.pt.nhentaibr": {
+    "apk": {
+      "name": "tachiyomi-pt.nhentaibr-v1.4.1.apk",
+      "sha256": "70e094b90a777709be46dd7feebf7d5c083e387699113758378923d58c7cb6d3"
+    },
+    "jar": {
+      "name": "tachiyomi-pt.nhentaibr-v1.4.1.jar",
+      "sha256": "4574dec397d3eef25ed1753838c627055ea793ce4f21727d65c590649d1125cd"
+    }
+  },
   "eu.kanade.tachiyomi.extension.pt.nhentainetbr": {
     "apk": {
       "name": "tachiyomi-pt.nhentainetbr-v1.6.3.apk",
