@@ -212,11 +212,11 @@
   "eu.kanade.tachiyomi.extension.pt.hqhentai": {
     "apk": {
       "name": "tachiyomi-pt.hqhentai-v1.4.1.apk",
-      "sha256": "eaaac6af119bd074b155810aad727fb9b96f631ff763b98b73ce175aa0301eb4"
+      "sha256": "a99685a5f9aa59f76fa732e1f3e2d23118dce99d9d27b2488e1b50c8ec33cea8"
     },
     "jar": {
       "name": "tachiyomi-pt.hqhentai-v1.4.1.jar",
-      "sha256": "9a8f3d3612f4e0a011401c78b64438646ba4f8c45f716033d0cba5b4d7e74ea6"
+      "sha256": "7c00a739990ac1c1d5ed28e3196d09d8780dd05b22d6fed98e2a18c6e95bf0a9"
     }
   },
   "eu.kanade.tachiyomi.extension.pt.mangashentais": {
