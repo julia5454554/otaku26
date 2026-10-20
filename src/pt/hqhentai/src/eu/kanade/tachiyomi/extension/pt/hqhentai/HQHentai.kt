@@ -170,21 +170,83 @@ class HQHentai(
     override fun pageListRequest(chapter: SChapter): Request = GET("$baseUrl/wp-json/wp/v2/media?parent=${chapter.url}&per_page=100&orderby=id&order=asc", headers)
 
     override fun pageListParse(response: Response): List<Page> {
-        if (!response.isSuccessful) return emptyList()
-        val body = response.body.string()
-        if (body.isBlank()) return emptyList()
-        val arr = try {
-            JSONArray(body)
+        // ---------- 1) CAMINHO PREMIUM (INTOCADO) ----------
+        if (response.isSuccessful) {
+            val body = response.body.string()
+            if (body.isNotBlank()) {
+                val arr = try {
+                    JSONArray(body)
+                } catch (_: Exception) {
+                    null
+                }
+                if (arr != null) {
+                    val pages = mutableListOf<Page>()
+                    for (i in 0 until arr.length()) {
+                        val item = arr.optJSONObject(i) ?: continue
+                        if (item.optString("media_type") != "image") continue
+                        val src = item.optString("source_url")
+                        if (src.isBlank()) continue
+                        pages.add(Page(pages.size, "", src))
+                    }
+                    if (pages.isNotEmpty()) return pages // Premium carregou, encerra aqui.
+                }
+            }
+        }
+
+        // ---------- 2) CAMINHO FREE (só roda se o Premium voltou vazio) ----------
+        val postId = response.request.url.queryParameter("parent")?.toIntOrNull() ?: return emptyList()
+        return fetchFreeGallery(postId)
+    }
+
+    private fun fetchFreeGallery(postId: Int): List<Page> {
+        val ids = try {
+            val req = GET("$baseUrl/wp-json/wp/v2/posts/$postId?_fields=id,meta", headers)
+            val resp = client.newCall(req).execute()
+            if (!resp.isSuccessful) return emptyList()
+
+            val json = JSONObject(resp.body.string())
+            val meta = json.optJSONObject("meta") ?: return emptyList()
+            val arr = meta.optJSONArray("vdw_gallery_id") ?: return emptyList()
+
+            val out = mutableListOf<Int>()
+            for (i in 0 until arr.length()) {
+                val id = arr.optInt(i, 0)
+                if (id > 0) out.add(id)
+            }
+            out
         } catch (_: Exception) {
             return emptyList()
         }
+
+        if (ids.isEmpty()) return emptyList()
+        return fetchMediaByIds(ids)
+    }
+
+    private fun fetchMediaByIds(ids: List<Int>): List<Page> {
+        val map = mutableMapOf<Int, String>()
+        ids.chunked(100).forEach { chunk ->
+            try {
+                val req = GET(
+                    "$baseUrl/wp-json/wp/v2/media?include=${chunk.joinToString(",")}&per_page=100",
+                    headers,
+                )
+                val resp = client.newCall(req).execute()
+                if (!resp.isSuccessful) return@forEach
+                val arr = JSONArray(resp.body.string())
+                for (i in 0 until arr.length()) {
+                    val item = arr.optJSONObject(i) ?: continue
+                    if (item.optString("media_type") != "image") continue
+                    val src = item.optString("source_url")
+                    if (src.isNotBlank()) map[item.optInt("id")] = src
+                }
+            } catch (_: Exception) {}
+        }
+
+        // Preserva a ordem exata do array vdw_gallery_id
         val pages = mutableListOf<Page>()
-        for (i in 0 until arr.length()) {
-            val item = arr.optJSONObject(i) ?: continue
-            if (item.optString("media_type") != "image") continue
-            val src = item.optString("source_url")
-            if (src.isBlank()) continue
-            pages.add(Page(pages.size, "", src))
+        for (id in ids) {
+            val url = map[id] ?: continue
+            pages.add(Page(pages.size, "", url))
         }
         return pages
     }
