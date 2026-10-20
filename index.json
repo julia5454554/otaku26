@@ -260,6 +260,27 @@
         ]
       },
       {
+        "name": "HQHentai",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.hqhentai",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/b2497e8/tachiyomi-pt.hqhentai-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/b2497e8/tachiyomi-pt.hqhentai-v1.4.1.jar"
+        },
+        "extensionLib": "1.4",
+        "versionCode": "104001",
+        "versionName": "1.4.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "2106656636416231874",
+            "name": "HQHentai",
+            "language": "pt-BR",
+            "homeUrl": "https://www.hqhentai.com.br"
+          }
+        ]
+      },
+      {
         "name": "Mangas Hentais",
         "packageName": "eu.kanade.tachiyomi.extension.pt.mangashentais",
         "resources": {
