@@ -129,6 +129,16 @@
       "sha256": "353857df44ab91b22dc4c1cce978c3495be478afa2ade050c8e22c0586895cfb"
     }
   },
+  "eu.kanade.tachiyomi.extension.pt.hentaitecanet": {
+    "apk": {
+      "name": "tachiyomi-pt.hentaitecanet-v1.6.1.apk",
+      "sha256": "2bf21f755f08f8633f55fa89e94b44ca8579a43f882d42bfc85046b4bde73e8d"
+    },
+    "jar": {
+      "name": "tachiyomi-pt.hentaitecanet-v1.6.1.jar",
+      "sha256": "c091aff1c1f47cc896829de695bdd2851b7608d56f95c5d51cfb1dd41592bb00"
+    }
+  },
   "eu.kanade.tachiyomi.extension.pt.hentaitokyo": {
     "apk": {
       "name": "tachiyomi-pt.hentaitokyo-v1.4.7.apk",
