@@ -8,6 +8,27 @@
   "extensionList": {
     "extensions": [
       {
+        "name": "PixiBB",
+        "packageName": "eu.kanade.tachiyomi.extension.en.pixibb",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/a3f439c/tachiyomi-en.pixibb-v1.6.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/a3f439c/tachiyomi-en.pixibb-v1.6.1.jar"
+        },
+        "extensionLib": "1.6",
+        "versionCode": "106001",
+        "versionName": "1.6.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "2405302753783475699",
+            "name": "PixiBB",
+            "language": "en",
+            "homeUrl": "https://hub.pixibb.com"
+          }
+        ]
+      },
+      {
         "name": "ComicsHentai",
         "packageName": "eu.kanade.tachiyomi.extension.pt.comicshentai",
         "resources": {

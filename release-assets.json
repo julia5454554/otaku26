@@ -1,4 +1,14 @@
 {
+  "eu.kanade.tachiyomi.extension.en.pixibb": {
+    "apk": {
+      "name": "tachiyomi-en.pixibb-v1.6.1.apk",
+      "sha256": "ae4a3c02ede3bfdb1ee1d2bb7db9ac748f7d98b310b0380d7e30d73e8518904e"
+    },
+    "jar": {
+      "name": "tachiyomi-en.pixibb-v1.6.1.jar",
+      "sha256": "4fe1413fb4217cc1dc3e2a7e30c8435eb5d7ce82fa42a64cdc15948b59480ad1"
+    }
+  },
   "eu.kanade.tachiyomi.extension.pt.acervohentai": {
     "apk": {
       "name": "tachiyomi-pt.acervohentai-v1.4.53.apk",
