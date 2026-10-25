@@ -59,6 +59,16 @@
       "sha256": "b336d1f629686cca6678610fbb76fca200d8e8e088fb988afcd36c063a21d093"
     }
   },
+  "eu.kanade.tachiyomi.extension.pt.hentaibrasil": {
+    "apk": {
+      "name": "tachiyomi-pt.hentaibrasil-v1.6.1.apk",
+      "sha256": "a0edcd28f5a62f2ceed4c16ad4f71ebedfe834c1029bb87e01eca5e0a2c958aa"
+    },
+    "jar": {
+      "name": "tachiyomi-pt.hentaibrasil-v1.6.1.jar",
+      "sha256": "af7b30e57ca9c69d34b069465d9253b3a196bb75a1e00be6f1ff8e41f404cdf0"
+    }
+  },
   "eu.kanade.tachiyomi.extension.pt.hentaicomics": {
     "apk": {
       "name": "tachiyomi-pt.hentaicomics-v1.4.1.apk",
