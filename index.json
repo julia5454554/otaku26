@@ -176,6 +176,27 @@
         ]
       },
       {
+        "name": "Hentai Home",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.hentaihome",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/b784c1f/tachiyomi-pt.hentaihome-v1.6.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/b784c1f/tachiyomi-pt.hentaihome-v1.6.1.jar"
+        },
+        "extensionLib": "1.6",
+        "versionCode": "106001",
+        "versionName": "1.6.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "7231112579087357426",
+            "name": "Hentai Home",
+            "language": "pt-BR",
+            "homeUrl": "https://www.hentaihome.net"
+          }
+        ]
+      },
+      {
         "name": "HentaiHq",
         "packageName": "eu.kanade.tachiyomi.extension.pt.hentaihq",
         "resources": {
@@ -382,6 +403,27 @@
             "name": "Mangas Hentais",
             "language": "pt-BR",
             "homeUrl": "https://mangashentais.com"
+          }
+        ]
+      },
+      {
+        "name": "MegaHQ",
+        "packageName": "eu.kanade.tachiyomi.extension.pt.megahq",
+        "resources": {
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/b784c1f/tachiyomi-pt.megahq-v1.6.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/b784c1f/tachiyomi-pt.megahq-v1.6.1.jar"
+        },
+        "extensionLib": "1.6",
+        "versionCode": "106001",
+        "versionName": "1.6.1",
+        "contentWarning": "CONTENT_WARNING_NSFW",
+        "sources": [
+          {
+            "id": "4255989586614036910",
+            "name": "MegaHQ",
+            "language": "pt-BR",
+            "homeUrl": "https://megahq.info"
           }
         ]
       },

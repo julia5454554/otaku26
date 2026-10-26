@@ -109,6 +109,16 @@
       "sha256": "29d888342db152cd898e27ed44b7e126bc74e58d0428a37c10a2e01912cc60e1"
     }
   },
+  "eu.kanade.tachiyomi.extension.pt.hentaihome": {
+    "apk": {
+      "name": "tachiyomi-pt.hentaihome-v1.6.1.apk",
+      "sha256": "d308a68a656098ead6f75c8b09faddf9185d0210c902a3663e0d244819eb55c8"
+    },
+    "jar": {
+      "name": "tachiyomi-pt.hentaihome-v1.6.1.jar",
+      "sha256": "200414406568079b4013d0fcc0b35bf7e6b847e94ce9b6f2e676726ddf075a55"
+    }
+  },
   "eu.kanade.tachiyomi.extension.pt.hentaihq": {
     "apk": {
       "name": "tachiyomi-pt.hentaihq-v1.4.1.apk",
@@ -267,6 +277,16 @@
     "jar": {
       "name": "tachiyomi-pt.mangashentais-v1.6.1.jar",
       "sha256": "c42e12096b75c0d1912e694d6c29afb68d3db498fce1d788bc78e57b03dbf8ed"
+    }
+  },
+  "eu.kanade.tachiyomi.extension.pt.megahq": {
+    "apk": {
+      "name": "tachiyomi-pt.megahq-v1.6.1.apk",
+      "sha256": "9303e76b4dda6c1e8171b8779bb822377ede2d4a2f83c158a04dbb3e42adfef4"
+    },
+    "jar": {
+      "name": "tachiyomi-pt.megahq-v1.6.1.jar",
+      "sha256": "57f5c0b8f441986e4f056561f604bfdbea947a4ef021b5a8b722a41a47e8fe6c"
     }
   },
   "eu.kanade.tachiyomi.extension.pt.meuhentai": {
