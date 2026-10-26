@@ -11,7 +11,7 @@ keiyoushi {
     libVersion = "1.4"
 
     source {
-        lang = "pt"
+        lang = "pt-BR"
         baseUrl = "https://revistasequadrinhos.com"
     }
 }

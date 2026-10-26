@@ -16,6 +16,7 @@ import keiyoushi.utils.tryParse
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import okhttp3.Response
+import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -154,14 +155,62 @@ abstract class RevistasEQuadrinhos : HttpSource() {
         val gallery = document.select("div.dgwt-jg-gallery figure.dgwt-jg-item a")
         if (gallery.isNotEmpty()) {
             return gallery.mapIndexed { index, a ->
-                Page(index, imageUrl = a.attr("abs:href"))
+                Page(index, imageUrl = a.absUrl("href"))
             }
         }
 
-        return document.select(".post-texto img").mapIndexed { index, img ->
-            val url = img.attr("abs:src").ifEmpty { img.attr("abs:data-lazy-src") }
+        return document.select(".post-texto img").mapIndexedNotNull { index, img ->
+            val url = bestImageUrl(img) ?: return@mapIndexedNotNull null
             Page(index, imageUrl = url)
         }
+    }
+
+    /**
+     * Retorna a URL de maior qualidade possível para um <img> do conteúdo.
+     *
+     * Ordem de preferência:
+     *  1. <a href> que envolve o <img> (WordPress aponta pro arquivo original)
+     *  2. maior entrada do srcset (por largura em "w")
+     *  3. data-lazy-src / src como fallback
+     */
+    private fun bestImageUrl(img: Element): String? {
+        // 1) <a href> envolvendo a imagem
+        img.parent()
+            ?.takeIf { it.tagName() == "a" }
+            ?.absUrl("href")
+            ?.takeIf(::looksLikeImage)
+            ?.let { return it }
+
+        // 2) srcset — pega a maior largura
+        val srcset = img.attr("srcset").ifBlank { img.attr("data-srcset") }
+        if (srcset.isNotBlank()) {
+            srcset.split(",")
+                .mapNotNull { part ->
+                    val toks = part.trim().split(Regex("\\s+"), limit = 2)
+                    val u = toks.getOrNull(0)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    val w = toks.getOrNull(1)?.removeSuffix("w")?.toIntOrNull() ?: 0
+                    u to w
+                }
+                .maxByOrNull { it.second }
+                ?.first
+                ?.let { raw -> return resolveUrl(img, raw) }
+        }
+
+        // 3) fallback
+        return img.absUrl("data-lazy-src").takeIf { it.isNotBlank() }
+            ?: img.absUrl("src").takeIf { it.isNotBlank() && !it.startsWith("data:") }
+    }
+
+    private fun resolveUrl(el: Element, url: String): String {
+        if (url.startsWith("http://") || url.startsWith("https://")) return url
+        return runCatching { java.net.URL(java.net.URL(el.baseUri()), url).toString() }
+            .getOrDefault(url)
+    }
+
+    private fun looksLikeImage(url: String): Boolean {
+        val p = url.substringBefore('?').lowercase()
+        return p.endsWith(".jpg") || p.endsWith(".jpeg") || p.endsWith(".png") ||
+            p.endsWith(".webp") || p.endsWith(".gif")
     }
 
     override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
