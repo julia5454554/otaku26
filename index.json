@@ -620,9 +620,9 @@
         "name": "Revistas e Quadrinhos",
         "packageName": "eu.kanade.tachiyomi.extension.pt.revistasequadrinhos",
         "resources": {
-          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.revistasequadrinhos-v1.4.1.apk",
-          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/src/pt/revistasequadrinhos/res/mipmap-xhdpi/ic_launcher.png",
-          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/e46d399/tachiyomi-pt.revistasequadrinhos-v1.4.1.jar"
+          "apkUrl": "https://github.com/julia5454554/otaku26/releases/download/6ef88f5/tachiyomi-pt.revistasequadrinhos-v1.4.1.apk",
+          "iconUrl": "https://cdn.jsdelivr.net/gh/julia5454554/otaku26@main/core/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "jarUrl": "https://github.com/julia5454554/otaku26/releases/download/6ef88f5/tachiyomi-pt.revistasequadrinhos-v1.4.1.jar"
         },
         "extensionLib": "1.4",
         "versionCode": "104001",
@@ -630,9 +630,9 @@
         "contentWarning": "CONTENT_WARNING_NSFW",
         "sources": [
           {
-            "id": "1455091782657313638",
+            "id": "1578866773467879464",
             "name": "Revistas e Quadrinhos",
-            "language": "pt",
+            "language": "pt-BR",
             "homeUrl": "https://revistasequadrinhos.com"
           }
         ]
