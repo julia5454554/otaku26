@@ -381,12 +381,12 @@
   },
   "eu.kanade.tachiyomi.extension.pt.revistasequadrinhos": {
     "apk": {
-      "name": "tachiyomi-pt.revistasequadrinhos-v1.4.1.apk",
-      "sha256": "656dde13af4f782740f3270f3816441fcbc7a47802c3ceb881b390513b3ed613"
+      "name": "tachiyomi-pt.revistasequadrinhos-v1.6.3.apk",
+      "sha256": "4a532c8a6486ca3f33de6aa13d26fcd2bd9a79a9f628b9a1ce7147f513eff8bf"
     },
     "jar": {
-      "name": "tachiyomi-pt.revistasequadrinhos-v1.4.1.jar",
-      "sha256": "9019a8bac5c20a4ba04a22182f2a341d3f920eddb79209f3d40bbd4aef3a14e2"
+      "name": "tachiyomi-pt.revistasequadrinhos-v1.6.3.jar",
+      "sha256": "de1597dec8c62885f8ffb1603a788d280aa903807c03277cd2a9bd6b2481e81c"
     }
   },
   "eu.kanade.tachiyomi.extension.pt.superhentaiblog": {
