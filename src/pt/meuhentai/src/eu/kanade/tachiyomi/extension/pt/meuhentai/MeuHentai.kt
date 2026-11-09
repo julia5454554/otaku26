@@ -27,8 +27,13 @@ abstract class MeuHentai : KeiSource() {
         .addInterceptor { chain ->
             val req = chain.request()
             val builder = req.newBuilder()
-            // String do User-Agent embutida (evita erro de formatação no Spotless)
-            if (req.header("User-Agent") == null) builder.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
+            if (req.header("User-Agent") == null) {
+                builder.header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                        "(KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                )
+            }
             if (req.header("Referer") == null) builder.header("Referer", "$baseUrl/")
             chain.proceed(builder.build())
         }
@@ -206,6 +211,10 @@ abstract class MeuHentai : KeiSource() {
     override fun imageRequest(page: Page): Request = Request.Builder()
         .url(page.imageUrl!!)
         .header("Referer", page.url)
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        )
         .build()
 }
