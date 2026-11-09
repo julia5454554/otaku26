@@ -23,17 +23,14 @@ abstract class MeuHentai : KeiSource() {
 
     override val supportsLatest = true
 
+    // User-Agent declarado como propriedade (o Ktlint aceita strings longas aqui sem quebrar)
+    private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+
     override fun OkHttpClient.Builder.configureClient() = rateLimit(2, 1.seconds)
         .addInterceptor { chain ->
             val req = chain.request()
             val builder = req.newBuilder()
-            if (req.header("User-Agent") == null) {
-                builder.header(
-                    "User-Agent",
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-                        "(KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-                )
-            }
+            if (req.header("User-Agent") == null) builder.header("User-Agent", userAgent)
             if (req.header("Referer") == null) builder.header("Referer", "$baseUrl/")
             chain.proceed(builder.build())
         }
@@ -211,10 +208,6 @@ abstract class MeuHentai : KeiSource() {
     override fun imageRequest(page: Page): Request = Request.Builder()
         .url(page.imageUrl!!)
         .header("Referer", page.url)
-        .header(
-            "User-Agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-                "(KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-        )
+        .header("User-Agent", userAgent)
         .build()
 }
