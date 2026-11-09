@@ -204,11 +204,9 @@ abstract class MeuHentai : KeiSource() {
     // =========================
     // imageRequest com Referer correto
     // =========================
-    override fun imageRequest(page: Page): Request {
-        return Request.Builder()
-            .url(page.imageUrl!!)
-            .header("Referer", page.url)
-            .header("User-Agent", userAgent)
-            .build()
-    }
+    override fun imageRequest(page: Page): Request = Request.Builder()
+        .url(page.imageUrl!!)
+        .header("Referer", page.url)
+        .header("User-Agent", userAgent)
+        .build()
 }
