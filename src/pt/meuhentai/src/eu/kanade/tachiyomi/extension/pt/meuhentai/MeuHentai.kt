@@ -1,93 +1,78 @@
 package eu.kanade.tachiyomi.extension.pt.meuhentai
 
-import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
-import eu.kanade.tachiyomi.source.online.HttpSource
-import eu.kanade.tachiyomi.util.asJsoup
+import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
+import keiyoushi.network.get
 import keiyoushi.network.rateLimit
-import okhttp3.Headers
+import keiyoushi.source.KeiSource
+import keiyoushi.utils.asJsoup
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.Response
+import org.jsoup.nodes.Document
 import kotlin.time.Duration.Companion.seconds
 
 @Source
-class MeuHentai(
-    override val lang: String = "pt-BR",
-    override val id: Long = 2026000001L,
-) : HttpSource() {
+abstract class MeuHentai : KeiSource() {
 
-    override val name = "MeuHentai"
-    override val baseUrl = "https://meuhentai.com"
     override val supportsLatest = true
 
-    override val client: OkHttpClient = network.client.newBuilder()
-        .rateLimit(2, 1.seconds)
-        .build()
-
-    override fun headersBuilder(): Headers.Builder = Headers.Builder()
-        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
-        .add("Referer", "$baseUrl/")
+    override fun OkHttpClient.Builder.configureClient() = rateLimit(2, 1.seconds)
+        .addInterceptor { chain ->
+            val req = chain.request()
+            val builder = req.newBuilder()
+            if (req.header("User-Agent") == null) builder.header("User-Agent", UA)
+            if (req.header("Referer") == null) builder.header("Referer", "$baseUrl/")
+            chain.proceed(builder.build())
+        }
 
     // =========================
     // Populares (Mais vistos)
     // =========================
-
-    override fun popularMangaRequest(page: Int): Request {
+    override suspend fun getPopularManga(page: Int): MangasPage {
         val url = if (page == 1) {
             "$baseUrl/?agt_sort=views".toHttpUrl()
         } else {
             "$baseUrl/page/$page/?agt_sort=views".toHttpUrl()
         }
-        return GET(url, headers)
+        return parseMangaList(client.get(url.toString()).asJsoup())
     }
-
-    override fun popularMangaParse(response: Response): MangasPage = parseMangaList(response)
 
     // =========================
     // Recentes (Latest)
     // =========================
-
-    override fun latestUpdatesRequest(page: Int): Request {
+    override suspend fun getLatestUpdates(page: Int): MangasPage {
         val url = if (page == 1) {
             "$baseUrl/".toHttpUrl()
         } else {
             "$baseUrl/page/$page/".toHttpUrl()
         }
-        return GET(url, headers)
+        return parseMangaList(client.get(url.toString()).asJsoup())
     }
-
-    override fun latestUpdatesParse(response: Response): MangasPage = parseMangaList(response)
 
     // =========================
     // Busca
     // =========================
-
-    override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
+    override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
         val urlBuilder = if (page == 1) {
             "$baseUrl/".toHttpUrl().newBuilder()
         } else {
             "$baseUrl/page/$page/".toHttpUrl().newBuilder()
         }
         urlBuilder.addQueryParameter("s", query)
-        return GET(urlBuilder.build(), headers)
+        return parseMangaList(client.get(urlBuilder.build().toString()).asJsoup())
     }
-
-    override fun searchMangaParse(response: Response): MangasPage = parseMangaList(response)
 
     // =========================
     // Parser comum da listagem (só HQ, sem anúncios)
     // =========================
-
-    private fun parseMangaList(response: Response): MangasPage {
-        val document = response.asJsoup()
-
+    private fun parseMangaList(document: Document): MangasPage {
         val mangas = document
             .select("article.agt-card--hq")
             .filterNot { element ->
@@ -106,7 +91,7 @@ class MeuHentai(
                     this.thumbnail_url = element.selectFirst("img.agt-card-img")
                         ?.attr("abs:src")
                         ?.takeIf { it.isNotBlank() }
-                    setUrlWithoutDomain(href)
+                    this.url = href.removePrefix(baseUrl)
                 }
             }
 
@@ -116,12 +101,26 @@ class MeuHentai(
         return MangasPage(mangas, hasNextPage)
     }
 
-    // =========================
-    // Detalhes
-    // =========================
+    override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
+        if (url.pathSegments.none { it.isNotBlank() }) return null
+        return fetchMangaUpdate(
+            SManga.create().apply { this.url = url.encodedPath },
+            emptyList(),
+            true,
+            false,
+        ).manga
+    }
 
-    override fun mangaDetailsParse(response: Response): SManga {
-        val document = response.asJsoup()
+    // =========================
+    // Detalhes + Capítulos (cada post = 1 capítulo)
+    // =========================
+    override suspend fun fetchMangaUpdate(
+        manga: SManga,
+        chapters: List<SChapter>,
+        fetchDetails: Boolean,
+        fetchChapters: Boolean,
+    ): SMangaUpdate {
+        val document = client.get(getMangaUrl(manga)).asJsoup()
 
         val title = document.selectFirst("h1.agt-single-title")?.text()?.trim()
             ?.takeIf { it.isNotBlank() }
@@ -145,31 +144,34 @@ class MeuHentai(
             .joinToString(", ")
             .takeIf { it.isNotBlank() }
 
-        return SManga.create().apply {
+        val updated = SManga.create().apply {
+            this.url = manga.url
             this.title = title
             this.thumbnail_url = thumbnail
             this.description = description
             this.genre = genre
         }
+
+        val chapterList = if (fetchChapters) {
+            listOf(
+                SChapter.create().apply {
+                    name = "Capítulo Único"
+                    this.url = manga.url
+                },
+            )
+        } else {
+            emptyList()
+        }
+
+        return SMangaUpdate(updated, chapterList)
     }
-
-    // =========================
-    // Capítulos (cada post = 1 capítulo)
-    // =========================
-
-    override fun chapterListParse(response: Response): List<SChapter> = listOf(
-        SChapter.create().apply {
-            name = "Capítulo Único"
-            setUrlWithoutDomain(response.request.url.toString())
-        },
-    )
 
     // =========================
     // Páginas (imagens do conteúdo)
     // =========================
-
-    override fun pageListParse(response: Response): List<Page> {
-        val document = response.asJsoup()
+    override suspend fun getPageList(chapter: SChapter): List<Page> {
+        val chapterUrl = getChapterUrl(chapter)
+        val document = client.get(chapterUrl).asJsoup()
 
         val images = document.select("div.agt-single-content figure.wp-block-image img")
             .ifEmpty {
@@ -193,25 +195,22 @@ class MeuHentai(
             }
             .distinct()
             .mapIndexed { index, url ->
-                Page(index, imageUrl = url)
+                Page(index, url = chapterUrl, imageUrl = url)
             }
     }
 
     // =========================
-    // imageUrlParse (obrigatório na libVersion 1.4 — nunca chamado,
-    // pois pageListParse é totalmente sobrescrito)
-    // =========================
-
-    override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
-
-    // =========================
     // imageRequest com Referer correto
     // =========================
+    override fun imageRequest(page: Page): Request = Request.Builder()
+        .url(page.imageUrl!!)
+        .header("Referer", page.url)
+        .header("User-Agent", UA)
+        .build()
 
-    override fun imageRequest(page: Page): Request {
-        val newHeaders = headersBuilder()
-            .set("Referer", page.url)
-            .build()
-        return GET(page.imageUrl!!, newHeaders)
+    companion object {
+        private const val UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
     }
 }

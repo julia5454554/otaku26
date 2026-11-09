@@ -1,13 +1,16 @@
 package eu.kanade.tachiyomi.extension.pt.hqhentai
 
-import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
-import eu.kanade.tachiyomi.source.online.HttpSource
+import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
+import keiyoushi.network.get
+import keiyoushi.source.KeiSource
+import okhttp3.HttpUrl
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.json.JSONArray
@@ -18,29 +21,37 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 @Source
-class HQHentai(
-    override val lang: String = "pt-BR",
-    override val id: Long = 2025000007L,
-) : HttpSource() {
+abstract class HQHentai : KeiSource() {
 
-    override val name = "HQ Hentai"
-    override val baseUrl = "https://www.hqhentai.com.br"
     override val supportsLatest = true
 
+    // Interceptor para garantir UA/Referer em chamadas que não usam o default do KeiSource
+    override fun OkHttpClient.Builder.configureClient() = addInterceptor { chain ->
+        val req = chain.request()
+        val builder = req.newBuilder()
+        if (req.header("User-Agent") == null) builder.header("User-Agent", UA)
+        if (req.header("Referer") == null) builder.header("Referer", "$baseUrl/")
+        chain.proceed(builder.build())
+    }
+
     // ========== POPULAR (categoria 151 - ⚡Exclusivo, excluindo vídeos e contos) ==========
-    override fun popularMangaRequest(page: Int): Request = GET("$baseUrl/wp-json/wp/v2/posts?_embed&per_page=20&page=$page&categories=151&categories_exclude=75,1219&orderby=date&order=desc", headers)
-    override fun popularMangaParse(response: Response) = parseList(response)
+    override suspend fun getPopularManga(page: Int): MangasPage {
+        val url = "$baseUrl/wp-json/wp/v2/posts?_embed&per_page=20&page=$page&categories=151&categories_exclude=75,1219&orderby=date&order=desc"
+        return parseList(client.get(url))
+    }
 
     // ========== RECENTES (geral, sem vídeos nem contos) ==========
-    override fun latestUpdatesRequest(page: Int): Request = GET("$baseUrl/wp-json/wp/v2/posts?_embed&per_page=20&page=$page&categories_exclude=75,1219&orderby=date&order=desc", headers)
-    override fun latestUpdatesParse(response: Response) = parseList(response)
+    override suspend fun getLatestUpdates(page: Int): MangasPage {
+        val url = "$baseUrl/wp-json/wp/v2/posts?_embed&per_page=20&page=$page&categories_exclude=75,1219&orderby=date&order=desc"
+        return parseList(client.get(url))
+    }
 
     // ========== BUSCA (também sem vídeos nem contos) ==========
-    override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
+    override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
         val q = URLEncoder.encode(query, "UTF-8")
-        return GET("$baseUrl/wp-json/wp/v2/posts?_embed&per_page=20&page=$page&search=$q&categories_exclude=75,1219&orderby=date&order=desc", headers)
+        val url = "$baseUrl/wp-json/wp/v2/posts?_embed&per_page=20&page=$page&search=$q&categories_exclude=75,1219&orderby=date&order=desc"
+        return parseList(client.get(url))
     }
-    override fun searchMangaParse(response: Response) = parseList(response)
 
     // ========== LISTA (compartilhado) ==========
     private fun parseList(response: Response): MangasPage {
@@ -82,10 +93,25 @@ class HQHentai(
         return media.optJSONObject(0)?.optString("source_url")?.takeIf { it.isNotBlank() }
     }
 
-    // ========== DETALHES ==========
-    override fun mangaDetailsRequest(manga: SManga): Request = GET("$baseUrl/wp-json/wp/v2/posts/${manga.url}?_embed", headers)
+    override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
+        if (url.pathSegments.none { it.isNotBlank() }) return null
+        return fetchMangaUpdate(
+            SManga.create().apply { this.url = url.encodedPath },
+            emptyList(),
+            true,
+            false,
+        ).manga
+    }
 
-    override fun mangaDetailsParse(response: Response): SManga {
+    // ========== DETALHES + CAPÍTULOS ==========
+    override suspend fun fetchMangaUpdate(
+        manga: SManga,
+        chapters: List<SChapter>,
+        fetchDetails: Boolean,
+        fetchChapters: Boolean,
+    ): SMangaUpdate {
+        val url = "$baseUrl/wp-json/wp/v2/posts/${manga.url}?_embed"
+        val response = client.get(url)
         val json = JSONObject(response.body.string())
         val postId = json.getInt("id")
         val titleRaw = json.getJSONObject("title").getString("rendered")
@@ -93,7 +119,8 @@ class HQHentai(
         val d = Jsoup.parse(json.optJSONObject("excerpt")?.optString("rendered").orEmpty()).text()
         val c = getCoverUrl(json)
         val g = extractGenres(json)
-        return SManga.create().apply {
+
+        val updated = SManga.create().apply {
             this.title = t
             this.url = postId.toString()
             this.thumbnail_url = c
@@ -101,9 +128,26 @@ class HQHentai(
             this.genre = g
             this.status = SManga.COMPLETED
         }
+
+        val chapterList = if (fetchChapters) {
+            val dateStr = json.optString("date")
+            val dateMs = parseDate(dateStr)
+            listOf(
+                SChapter.create().apply {
+                    this.name = "Capítulo Único"
+                    this.url = postId.toString()
+                    this.date_upload = dateMs
+                    this.chapter_number = 1f
+                },
+            )
+        } else {
+            emptyList()
+        }
+
+        return SMangaUpdate(updated, chapterList)
     }
 
-    private fun extractGenres(json: JSONObject): String {
+    private suspend fun extractGenres(json: JSONObject): String {
         val categories = json.optJSONArray("categories") ?: return ""
         val map = getCategoryMap()
         val out = mutableListOf<String>()
@@ -116,10 +160,10 @@ class HQHentai(
 
     @Volatile private var categoryCache: Map<Int, String>? = null
 
-    private fun getCategoryMap(): Map<Int, String> {
+    private suspend fun getCategoryMap(): Map<Int, String> {
         categoryCache?.let { return it }
         return try {
-            val response = client.newCall(GET("$baseUrl/wp-json/wp/v2/categories?per_page=100", headers)).execute()
+            val response = client.get("$baseUrl/wp-json/wp/v2/categories?per_page=100")
             val arr = JSONArray(response.body.string())
             val map = mutableMapOf<Int, String>()
             for (i in 0 until arr.length()) {
@@ -131,24 +175,6 @@ class HQHentai(
         } catch (_: Exception) {
             emptyMap()
         }
-    }
-
-    // ========== CAPÍTULOS (1 único por post) ==========
-    override fun chapterListRequest(manga: SManga): Request = GET("$baseUrl/wp-json/wp/v2/posts/${manga.url}", headers)
-
-    override fun chapterListParse(response: Response): List<SChapter> {
-        val json = JSONObject(response.body.string())
-        val postId = json.getInt("id")
-        val dateStr = json.optString("date")
-        val dateMs = parseDate(dateStr)
-        return listOf(
-            SChapter.create().apply {
-                this.name = "Capítulo Único"
-                this.url = postId.toString()
-                this.date_upload = dateMs
-                this.chapter_number = 1f
-            },
-        )
     }
 
     private fun parseDate(s: String): Long {
@@ -167,9 +193,10 @@ class HQHentai(
     }
 
     // ========== PÁGINAS (via /media?parent= com ORDEM CORRETA) ==========
-    override fun pageListRequest(chapter: SChapter): Request = GET("$baseUrl/wp-json/wp/v2/media?parent=${chapter.url}&per_page=100&orderby=id&order=asc", headers)
+    override suspend fun getPageList(chapter: SChapter): List<Page> {
+        val url = "$baseUrl/wp-json/wp/v2/media?parent=${chapter.url}&per_page=100&orderby=id&order=asc"
+        val response = client.get(url)
 
-    override fun pageListParse(response: Response): List<Page> {
         // ---------- 1) CAMINHO PREMIUM (INTOCADO) ----------
         if (response.isSuccessful) {
             val body = response.body.string()
@@ -186,7 +213,7 @@ class HQHentai(
                         if (item.optString("media_type") != "image") continue
                         val src = item.optString("source_url")
                         if (src.isBlank()) continue
-                        pages.add(Page(pages.size, "", src))
+                        pages.add(Page(pages.size, chapter.url, src))
                     }
                     if (pages.isNotEmpty()) return pages // Premium carregou, encerra aqui.
                 }
@@ -194,14 +221,13 @@ class HQHentai(
         }
 
         // ---------- 2) CAMINHO FREE (só roda se o Premium voltou vazio) ----------
-        val postId = response.request.url.queryParameter("parent")?.toIntOrNull() ?: return emptyList()
+        val postId = chapter.url.toIntOrNull() ?: return emptyList()
         return fetchFreeGallery(postId)
     }
 
-    private fun fetchFreeGallery(postId: Int): List<Page> {
+    private suspend fun fetchFreeGallery(postId: Int): List<Page> {
         val ids = try {
-            val req = GET("$baseUrl/wp-json/wp/v2/posts/$postId?_fields=id,meta", headers)
-            val resp = client.newCall(req).execute()
+            val resp = client.get("$baseUrl/wp-json/wp/v2/posts/$postId?_fields=id,meta")
             if (!resp.isSuccessful) return emptyList()
 
             val json = JSONObject(resp.body.string())
@@ -222,15 +248,11 @@ class HQHentai(
         return fetchMediaByIds(ids)
     }
 
-    private fun fetchMediaByIds(ids: List<Int>): List<Page> {
+    private suspend fun fetchMediaByIds(ids: List<Int>): List<Page> {
         val map = mutableMapOf<Int, String>()
         ids.chunked(100).forEach { chunk ->
             try {
-                val req = GET(
-                    "$baseUrl/wp-json/wp/v2/media?include=${chunk.joinToString(",")}&per_page=100",
-                    headers,
-                )
-                val resp = client.newCall(req).execute()
+                val resp = client.get("$baseUrl/wp-json/wp/v2/media?include=${chunk.joinToString(",")}&per_page=100")
                 if (!resp.isSuccessful) return@forEach
                 val arr = JSONArray(resp.body.string())
                 for (i in 0 until arr.length()) {
@@ -251,5 +273,16 @@ class HQHentai(
         return pages
     }
 
-    override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
+    // ========== IMAGEM ==========
+    override fun imageRequest(page: Page): Request = Request.Builder()
+        .url(page.imageUrl!!)
+        .header("Referer", "$baseUrl/")
+        .header("User-Agent", UA)
+        .build()
+
+    companion object {
+        private const val UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+    }
 }

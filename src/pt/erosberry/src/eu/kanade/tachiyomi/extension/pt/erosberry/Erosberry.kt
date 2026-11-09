@@ -1,43 +1,42 @@
 package eu.kanade.tachiyomi.extension.pt.erosberry
 
-import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
-import eu.kanade.tachiyomi.source.online.HttpSource
-import eu.kanade.tachiyomi.util.asJsoup
+import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
+import keiyoushi.network.get
 import keiyoushi.network.rateLimit
-import okhttp3.Headers
+import keiyoushi.source.KeiSource
+import keiyoushi.utils.asJsoup
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.Response
+import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
 import java.util.Locale
 import kotlin.time.Duration.Companion.seconds
 
 @Source
-class Erosberry(
-    override val lang: String = "pt-BR",
-    override val id: Long = 2026000002L,
-) : HttpSource() {
+abstract class Erosberry : KeiSource() {
 
-    override val name = "Erosberry"
-    override val baseUrl = "https://www.erosberry.com"
-
-    // ⚠️ false = só a aba "Populares" aparece no app (a aba "Recentes" some)
     override val supportsLatest = false
 
-    override val client: OkHttpClient = network.client.newBuilder()
-        .rateLimit(2, 1.seconds)
-        .build()
-
-    override fun headersBuilder(): Headers.Builder = Headers.Builder()
-        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
-        .add("Referer", "$baseUrl/")
+    override fun OkHttpClient.Builder.configureClient() = rateLimit(2, 1.seconds)
+        .addInterceptor { chain ->
+            val req = chain.request()
+            val builder = req.newBuilder()
+            if (req.header("User-Agent") == null) {
+                builder.header("User-Agent", USER_AGENT)
+            }
+            if (req.header("Referer") == null) {
+                builder.header("Referer", "$baseUrl/")
+            }
+            chain.proceed(builder.build())
+        }
 
     private val dateFormat = SimpleDateFormat("MMMM d, yyyy", Locale.ENGLISH)
 
@@ -58,66 +57,78 @@ class Erosberry(
         }
     }
 
-    private fun parseListPage(response: Response): MangasPage {
-        val document = response.asJsoup()
+    private fun parseListing(document: Document): MangasPage {
         val mangas = document.select("div.item-post").mapNotNull { it.toSManga() }
         val hasNext = document.selectFirst("div.pagination div.pager.next a") != null
         return MangasPage(mangas, hasNext)
     }
 
     // Aba única = listagem recente do site
-    override fun popularMangaRequest(page: Int): Request = GET("$baseUrl/page/$page", headers)
+    override suspend fun getPopularManga(page: Int): MangasPage = parseListing(client.get("$baseUrl/page/$page").asJsoup())
 
-    override fun popularMangaParse(response: Response): MangasPage = parseListPage(response)
-
-    // ⚠️ Obrigatórios pela classe HttpSource, mas NÃO são usados (supportsLatest = false)
-    override fun latestUpdatesRequest(page: Int): Request = GET("$baseUrl/page/$page", headers)
-
-    override fun latestUpdatesParse(response: Response): MangasPage = parseListPage(response)
+    // supportsLatest = false → não aparece na UI, mas mantemos por paridade
+    override suspend fun getLatestUpdates(page: Int): MangasPage = parseListing(client.get("$baseUrl/page/$page").asJsoup())
 
     // ---------- BUSCA ----------
-    override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
+    override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
         val searchUrl = if (page == 1) {
             "$baseUrl/search?search=${query.replace(" ", "+")}"
         } else {
             "$baseUrl/search?search=${query.replace(" ", "+")}&page=$page"
         }
-        return GET(searchUrl, headers)
+        return parseListing(client.get(searchUrl).asJsoup())
     }
 
-    override fun searchMangaParse(response: Response): MangasPage = parseListPage(response)
+    override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
+        if (url.pathSegments.none { it.isNotBlank() }) return null
+        return fetchMangaUpdate(
+            SManga.create().apply { this.url = url.encodedPath },
+            emptyList(),
+            true,
+            false,
+        ).manga
+    }
 
-    // ---------- DETALHES ----------
-    override fun mangaDetailsParse(response: Response): SManga {
-        val document = response.asJsoup()
-        return SManga.create().apply {
-            title = document.selectFirst("h1.title")?.text()?.trim().orEmpty()
-            thumbnail_url = document.selectFirst("meta[property=og:image]")?.attr("content").orEmpty()
-            description = document.selectFirst("meta[name=description]")?.attr("content").orEmpty()
-            artist = document.selectFirst("a[href^='/model/']")?.text()?.trim()
-            author = artist
-            genre = document.select("a.item-tag").joinToString(", ") { it.text().trim() }
+    // ---------- DETALHES + CAPÍTULOS ----------
+    override suspend fun fetchMangaUpdate(
+        manga: SManga,
+        chapters: List<SChapter>,
+        fetchDetails: Boolean,
+        fetchChapters: Boolean,
+    ): SMangaUpdate {
+        val document = client.get(getMangaUrl(manga)).asJsoup()
+
+        val updated = SManga.create().apply {
+            this.url = manga.url
+            this.title = document.selectFirst("h1.title")?.text()?.trim().orEmpty()
+            this.thumbnail_url = document.selectFirst("meta[property=og:image]")?.attr("content").orEmpty()
+            this.description = document.selectFirst("meta[name=description]")?.attr("content").orEmpty()
+            this.artist = document.selectFirst("a[href^='/model/']")?.text()?.trim()
+            this.author = this.artist
+            this.genre = document.select("a.item-tag").joinToString(", ") { it.text().trim() }
         }
-    }
 
-    // ---------- CAPÍTULOS (galeria única) ----------
-    override fun chapterListParse(response: Response): List<SChapter> {
-        val doc = response.asJsoup()
-        val dateText = doc.selectFirst("span.item:has(i.icon-calendar) span.value")?.text()
-        val date = dateText?.let { runCatching { dateFormat.parse(it)?.time }.getOrNull() } ?: 0L
-        return listOf(
-            SChapter.create().apply {
-                name = "Gallery"
-                url = response.request.url.toString().removePrefix(baseUrl)
-                date_upload = date
-            },
-        )
+        val chapterList = if (fetchChapters) {
+            val dateText = document.selectFirst("span.item:has(i.icon-calendar) span.value")?.text()
+            val date = dateText?.let { runCatching { dateFormat.parse(it)?.time }.getOrNull() } ?: 0L
+            listOf(
+                SChapter.create().apply {
+                    name = "Gallery"
+                    this.url = manga.url
+                    this.date_upload = date
+                },
+            )
+        } else {
+            emptyList()
+        }
+
+        return SMangaUpdate(updated, chapterList)
     }
 
     // ---------- PÁGINAS ----------
-    override fun pageListParse(response: Response): List<Page> {
-        val galleryUrl = response.request.url.toString()
-        val document = response.asJsoup()
+    override suspend fun getPageList(chapter: SChapter): List<Page> {
+        val galleryUrl = getChapterUrl(chapter)
+        val document = client.get(galleryUrl).asJsoup()
         return document.select("a.thumb-card").mapIndexedNotNull { i, a ->
             val img = a.selectFirst("img.thumb-image") ?: return@mapIndexedNotNull null
             val url = pickLargestImageUrl(img) ?: return@mapIndexedNotNull null
@@ -126,7 +137,7 @@ class Erosberry(
     }
 
     private fun pickLargestImageUrl(img: Element): String? {
-        // 1) Preferir srcset/data-srcset (tem várias resoluções)
+        // 1) srcset/data-srcset (maior resolução disponível)
         val srcset = img.attr("data-srcset").ifBlank { img.attr("srcset") }
         if (srcset.isNotBlank()) {
             val largest = srcset.split(",")
@@ -142,7 +153,7 @@ class Erosberry(
                 ?.first
             if (largest != null) return largest
         }
-        // 2) data-src (lazy load, mas sem srcset)
+        // 2) data-src (lazy load)
         val dataSrc = img.attr("data-src")
         if (dataSrc.isNotBlank() && !dataSrc.contains("1px.png")) {
             return dataSrc.replace(Regex("_\\d+\\.jpg$"), "_800.jpg")
@@ -155,12 +166,16 @@ class Erosberry(
         return null
     }
 
-    override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
+    // ---------- IMAGEM ----------
+    override fun imageRequest(page: Page): Request = Request.Builder()
+        .url(page.imageUrl!!)
+        .header("Referer", page.url)
+        .header("User-Agent", USER_AGENT)
+        .build()
 
-    override fun imageRequest(page: Page): Request {
-        val newHeaders = headersBuilder()
-            .set("Referer", page.url)
-            .build()
-        return GET(page.imageUrl!!, newHeaders)
+    companion object {
+        private const val USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
     }
 }

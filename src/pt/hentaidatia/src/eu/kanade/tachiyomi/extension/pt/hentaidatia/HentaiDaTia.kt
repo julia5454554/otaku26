@@ -1,17 +1,19 @@
 package eu.kanade.tachiyomi.extension.pt.hentaidatia
 
-import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
+import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
-import eu.kanade.tachiyomi.source.online.HttpSource
 import keiyoushi.annotation.Source
+import keiyoushi.network.get
+import keiyoushi.source.KeiSource
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -19,40 +21,29 @@ import org.jsoup.Jsoup
 import java.net.URLEncoder
 
 @Source
-class HentaiDaTia(
-    override val lang: String = "pt-BR",
-    override val id: Long = 2025000005L, // ⚠️ ID único — não colidir com SuperHQ (3) / HentaisBlog (4)
-) : HttpSource() {
+abstract class HentaiDaTia : KeiSource() {
 
-    override val name = "Hentai da Tia"
-    override val baseUrl = "https://hentaidatia.com"
     override val supportsLatest = true
 
     private val postsUrl = "$baseUrl/wp-json/wp/v2/posts"
     private val mediaUrl = "$baseUrl/wp-json/wp/v2/media"
     private val perPage = 20
-    private val includeChunk = 100 // WP limita ?include= a 100 IDs por request
+    private val includeChunk = 100
 
     private val json = Json { ignoreUnknownKeys = true }
 
     /**
-     * Injeta Referer em toda requisição. E o cookie do age gate (tia_idade_confirmada=1)
-     * por segurança — hoje o gate é só CSS/JS, mas se mudarem pra server-side,
-     * já estará coberto.
+     * Injeta UA, Referer e Cookie do age gate em toda requisição (só se ausentes,
+     * preservando o Referer específico de imageRequest caso alguém o defina).
      */
-    override val client: OkHttpClient = network.client.newBuilder()
-        .addInterceptor { chain ->
-            val original = chain.request()
-            val builder = original.newBuilder()
-            if (original.header("Referer") == null) {
-                builder.header("Referer", "$baseUrl/")
-            }
-            if (original.header("Cookie") == null) {
-                builder.header("Cookie", "tia_idade_confirmada=1")
-            }
-            chain.proceed(builder.build())
-        }
-        .build()
+    override fun OkHttpClient.Builder.configureClient() = addInterceptor { chain ->
+        val original = chain.request()
+        val builder = original.newBuilder()
+        if (original.header("User-Agent") == null) builder.header("User-Agent", UA)
+        if (original.header("Referer") == null) builder.header("Referer", "$baseUrl/")
+        if (original.header("Cookie") == null) builder.header("Cookie", "tia_idade_confirmada=1")
+        chain.proceed(builder.build())
+    }
 
     // ============================================================
     // MODELOS JSON
@@ -110,17 +101,9 @@ class HentaiDaTia(
     // HELPERS
     // ============================================================
 
-    /**
-     * Melhor URL de uma mídia:
-     * 1. media_details.sizes.full.source_url (full-res) se existir
-     * 2. source_url de topo (fallback)
-     */
     private fun WpMedia.bestUrl(): String? = mediaDetails?.sizes?.get("full")?.sourceUrl?.takeIf { it.isNotBlank() }
         ?: sourceUrl.takeIf { it.isNotBlank() }
 
-    /**
-     * Usa Jsoup pra decodificar entidades HTML (&atilde; → ã, etc) e remover tags.
-     */
     private fun cleanHtmlText(html: String): String = Jsoup.parse(html).text().trim()
 
     private fun extractSlug(url: String): String = url.trimEnd('/').substringAfterLast("/")
@@ -129,7 +112,6 @@ class HentaiDaTia(
         val href = link
         if (href.isBlank() || !href.startsWith(baseUrl)) return null
 
-        // Capa: featured_media (via _embed). Se não tiver, post fica sem capa mas não é pulado.
         val cover = embedded?.featuredMedia?.firstOrNull()?.bestUrl()
 
         val cleanTitle = cleanHtmlText(title.rendered).ifBlank { slug }
@@ -137,7 +119,7 @@ class HentaiDaTia(
 
         return SManga.create().apply {
             this.title = cleanTitle
-            setUrlWithoutDomain(href)
+            this.url = href.removePrefix(baseUrl)
             this.thumbnail_url = cover
         }
     }
@@ -152,132 +134,113 @@ class HentaiDaTia(
     }
 
     /**
-     * Busca mídias por IDs, dividindo em lotes de 100 (limite do WP).
-     * Ordena pela ordem dos IDs originais (importante — a ordem das páginas
-     * do capítulo vem da ordem do vdw_gallery_id).
+     * Busca mídias por IDs em lotes de 100 (limite WP), preservando a ordem
+     * original de vdw_gallery_id.
      */
-    private fun fetchMediaByIds(ids: List<Long>): List<WpMedia> {
+    private suspend fun fetchMediaByIds(ids: List<Long>): List<WpMedia> {
         if (ids.isEmpty()) return emptyList()
 
         val all = mutableMapOf<Long, WpMedia>()
         for (chunk in ids.chunked(includeChunk)) {
             val includeParam = chunk.joinToString(",")
-            val req = GET("$mediaUrl?include=$includeParam&per_page=$includeChunk", headers)
-            val resp = client.newCall(req).execute()
-            val bodyText = resp.body.string()
-            resp.close()
+            val bodyText = client.get("$mediaUrl?include=$includeParam&per_page=$includeChunk").body.string()
             val medias: List<WpMedia> = json.decodeFromString(bodyText)
             medias.forEach { all[it.id] = it }
         }
 
-        // Preserva a ordem do vdw_gallery_id original
         return ids.mapNotNull { all[it] }
     }
 
     // ============================================================
-    // POPULAR
+    // POPULAR / LATEST / SEARCH
     // ============================================================
 
-    override fun popularMangaRequest(page: Int): Request = GET("$postsUrl?_embed&per_page=$perPage&page=$page", headers)
+    override suspend fun getPopularManga(page: Int): MangasPage = parseListing(client.get("$postsUrl?_embed&per_page=$perPage&page=$page"))
 
-    override fun popularMangaParse(response: Response): MangasPage = parseListing(response)
+    override suspend fun getLatestUpdates(page: Int): MangasPage = getPopularManga(page)
 
-    // ============================================================
-    // LATEST
-    // ============================================================
-
-    override fun latestUpdatesRequest(page: Int): Request = popularMangaRequest(page)
-
-    override fun latestUpdatesParse(response: Response): MangasPage = popularMangaParse(response)
-
-    // ============================================================
-    // SEARCH
-    // ============================================================
-
-    override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
+    override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
         val q = URLEncoder.encode(query, "UTF-8")
-        return GET("$postsUrl?_embed&search=$q&per_page=$perPage&page=$page", headers)
+        return parseListing(client.get("$postsUrl?_embed&search=$q&per_page=$perPage&page=$page"))
     }
 
-    override fun searchMangaParse(response: Response): MangasPage = parseListing(response)
+    override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
+        if (url.pathSegments.none { it.isNotBlank() }) return null
+        return fetchMangaUpdate(
+            SManga.create().apply { this.url = url.encodedPath },
+            emptyList(),
+            true,
+            false,
+        ).manga
+    }
 
     // ============================================================
-    // DETAILS
+    // DETALHES + CAPÍTULOS (1 fetch só — pula o front-end)
     // ============================================================
 
-    override fun mangaDetailsParse(response: Response): SManga {
-        val slug = extractSlug(response.request.url.toString())
-
-        val apiResponse = client.newCall(
-            GET("$postsUrl?_embed&slug=$slug", headers),
-        ).execute()
-        val bodyText = apiResponse.body.string()
-        apiResponse.close()
-
+    override suspend fun fetchMangaUpdate(
+        manga: SManga,
+        chapters: List<SChapter>,
+        fetchDetails: Boolean,
+        fetchChapters: Boolean,
+    ): SMangaUpdate {
+        val slug = extractSlug(manga.url)
+        val bodyText = client.get("$postsUrl?_embed&slug=$slug").body.string()
         val posts: List<WpPost> = json.decodeFromString(bodyText)
         val post = posts.firstOrNull()
             ?: throw Exception("HentaiDaTia: post não encontrado para slug=$slug")
 
-        // Gêneros: extrai de class_list (tag-*, category-*)
         val genres = post.classList
             .filter { it.startsWith("tag-") || it.startsWith("category-") }
             .map { it.removePrefix("tag-").removePrefix("category-").replace("-", " ") }
             .distinct()
 
         val cover = post.embedded?.featuredMedia?.firstOrNull()?.bestUrl()
-
         val cleanTitle = cleanHtmlText(post.title.rendered).ifBlank { post.slug }
 
-        // Descrição: excerpt > meta.paginas + meta.formato como fallback
         val cleanDescription = cleanHtmlText(post.excerpt.rendered)
             .takeIf { it.isNotBlank() }
             ?: buildString {
-                val paginas = post.meta.paginas
-                if (paginas.isNotBlank()) append("Páginas: $paginas")
+                if (post.meta.paginas.isNotBlank()) append("Páginas: ${post.meta.paginas}")
             }.takeIf { it.isNotBlank() }
 
         val cleanGenres = genres.joinToString(", ").takeIf { it.isNotBlank() }
 
-        return SManga.create().apply {
+        val updated = SManga.create().apply {
+            this.url = manga.url
             this.title = cleanTitle
             this.thumbnail_url = cover
             this.description = cleanDescription
             this.genre = cleanGenres
             this.status = SManga.COMPLETED
-            update_strategy = UpdateStrategy.ALWAYS_UPDATE
+            this.update_strategy = UpdateStrategy.ALWAYS_UPDATE
         }
+
+        val chapterList = if (fetchChapters) {
+            listOf(
+                SChapter.create().apply {
+                    name = "Capítulo Único"
+                    chapter_number = 1f
+                    this.url = manga.url
+                },
+            )
+        } else {
+            emptyList()
+        }
+
+        return SMangaUpdate(updated, chapterList)
     }
 
     // ============================================================
-    // CHAPTERS  (leitor direto = 1 capítulo único)
+    // PÁGINAS
     // ============================================================
 
-    override fun chapterListParse(response: Response): List<SChapter> {
-        val url = response.request.url.toString()
-        return listOf(
-            SChapter.create().apply {
-                this.name = "Capítulo Único"
-                this.chapter_number = 1f
-                setUrlWithoutDomain(url)
-            },
-        )
-    }
-
-    // ============================================================
-    // PAGES  (busca post via API, pega vdw_gallery_id, busca mídias)
-    // ============================================================
-
-    override fun pageListParse(response: Response): List<Page> {
-        val url = response.request.url.toString()
-        val slug = extractSlug(url)
+    override suspend fun getPageList(chapter: SChapter): List<Page> {
+        val chapterUrl = getChapterUrl(chapter)
+        val slug = extractSlug(chapterUrl)
 
         // 1. Busca o post pra pegar a lista de IDs da galeria
-        val postResp = client.newCall(
-            GET("$postsUrl?slug=$slug&per_page=1", headers),
-        ).execute()
-        val postBody = postResp.body.string()
-        postResp.close()
-
+        val postBody = client.get("$postsUrl?slug=$slug&per_page=1").body.string()
         val posts: List<WpPost> = json.decodeFromString(postBody)
         val post = posts.firstOrNull()
             ?: throw Exception("HentaiDaTia: nenhum post para slug=$slug")
@@ -295,10 +258,20 @@ class HentaiDaTia(
             throw Exception("HentaiDaTia: nenhuma imagem retornada para ${galleryIds.size} IDs")
         }
 
-        return urls.mapIndexed { i, u -> Page(i, "", u) }
+        return urls.mapIndexed { i, u -> Page(i, chapterUrl, u) }
     }
 
-    override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
+    // ============================================================
+    // IMAGEM
+    // ============================================================
 
-    override fun imageRequest(page: Page): Request = GET(page.imageUrl!!, headers)
+    override fun imageRequest(page: Page): Request = Request.Builder()
+        .url(page.imageUrl!!)
+        .build()
+
+    companion object {
+        private const val UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+    }
 }

@@ -1,16 +1,17 @@
 package eu.kanade.tachiyomi.extension.pt.piratahq
 
-import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
+import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
-import eu.kanade.tachiyomi.source.online.HttpSource
 import keiyoushi.annotation.Source
+import keiyoushi.network.get
 import keiyoushi.network.rateLimit
-import okhttp3.Headers
+import keiyoushi.source.KeiSource
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -22,22 +23,18 @@ import org.jsoup.nodes.Element
 import kotlin.time.Duration.Companion.seconds
 
 @Source
-class PirataHq(
-    override val lang: String = "pt-BR",
-    override val id: Long = 0L, // troque por um ID único na publicação
-) : HttpSource() {
+abstract class PirataHq : KeiSource() {
 
-    override val name = "PirataHq"
-    override val baseUrl = "https://piratahq.com.br"
     override val supportsLatest = true
 
-    override val client: OkHttpClient = network.client.newBuilder()
-        .rateLimit(2, 1.seconds)
-        .build()
-
-    override fun headersBuilder(): Headers.Builder = Headers.Builder()
-        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
-        .add("Referer", "$baseUrl/")
+    override fun OkHttpClient.Builder.configureClient() = rateLimit(2, 1.seconds)
+        .addInterceptor { chain ->
+            val req = chain.request()
+            val builder = req.newBuilder()
+            if (req.header("User-Agent") == null) builder.header("User-Agent", UA)
+            if (req.header("Referer") == null) builder.header("Referer", "$baseUrl/")
+            chain.proceed(builder.build())
+        }
 
     // ==================== EXTRAÇÃO DE URL DE IMAGEM ====================
     private fun extractImageUrl(element: Element): String {
@@ -55,16 +52,49 @@ class PirataHq(
         }
     }
 
-    // ==================== LISTAGEM (API REST) ====================
-    override fun popularMangaRequest(page: Int): Request {
-        val url = "$baseUrl/wp-json/wp/v2/posts".toHttpUrl().newBuilder()
-            .addQueryParameter("per_page", "20")
-            .addQueryParameter("page", page.toString())
-            .build()
-        return GET(url, headers)
+    // ==================== FILTRO DE TEASERS ====================
+    private fun isTeaserPost(contentHtml: String): Boolean {
+        val doc = Jsoup.parse(contentHtml)
+        val textContent = doc.text().lowercase()
+
+        // 1. Palavras-chave típicas de posts que redirecionam
+        val teaserKeywords = listOf(
+            "ver completo",
+            "veja completo",
+            "site oficial",
+            "continuar lendo",
+            "leia o resto",
+            "leia mais no site",
+            "acesse o site",
+            "publicidade",
+        )
+        if (teaserKeywords.any { textContent.contains(it) }) {
+            return true
+        }
+
+        // 2. Links externos para sites conhecidos de redirecionamento (Confirmado via Termux)
+        val teaserDomains = listOf(
+            "tufos.com.br",
+            "pervcomix.com",
+            "hentaiputa.com",
+            "meuhentai.com",
+            "nudelas.com",
+            "linkrosa",
+            "bit.ly",
+        )
+        val hasExternalLink = doc.select("a[href]").any { a ->
+            val href = a.absUrl("href").lowercase()
+            teaserDomains.any { domain -> href.contains(domain) }
+        }
+        if (hasExternalLink) {
+            return true
+        }
+
+        return false
     }
 
-    override fun popularMangaParse(response: Response): MangasPage {
+    // ==================== LISTAGEM (API REST) ====================
+    private fun parseListing(response: Response): MangasPage {
         val jsonArray = JSONArray(response.body.string())
         val mangas = mutableListOf<SManga>()
 
@@ -88,7 +118,11 @@ class PirataHq(
             val doc = Jsoup.parse(contentHtml)
             val images = doc.select("img")
 
+            // FILTRO 1: Menos de 2 imagens
             if (images.size < 2) continue
+
+            // FILTRO 2: É um post "isca" (teaser)?
+            if (isTeaserPost(contentHtml)) continue
 
             val apiUrl = "/wp-json/wp/v2/posts/$id"
             val thumb = post.optString("jetpack_featured_media_url", "").ifEmpty {
@@ -98,7 +132,7 @@ class PirataHq(
             SManga.create().apply {
                 this.title = title
                 this.thumbnail_url = thumb
-                setUrlWithoutDomain(apiUrl)
+                this.url = apiUrl
             }.let { mangas.add(it) }
         }
 
@@ -109,68 +143,108 @@ class PirataHq(
         return MangasPage(mangas, hasNextPage)
     }
 
-    override fun latestUpdatesRequest(page: Int): Request = popularMangaRequest(page)
-    override fun latestUpdatesParse(response: Response): MangasPage = popularMangaParse(response)
-
-    // ==================== BUSCA (API REST) ====================
-    override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
+    override suspend fun getPopularManga(page: Int): MangasPage {
         val url = "$baseUrl/wp-json/wp/v2/posts".toHttpUrl().newBuilder()
-            .addQueryParameter("search", query)
             .addQueryParameter("per_page", "20")
             .addQueryParameter("page", page.toString())
             .build()
-        return GET(url, headers)
+        return parseListing(client.get(url.toString()))
     }
 
-    override fun searchMangaParse(response: Response): MangasPage = popularMangaParse(response)
+    override suspend fun getLatestUpdates(page: Int): MangasPage = getPopularManga(page)
 
-    // ==================== DETALHES (API REST) ====================
-    override fun mangaDetailsParse(response: Response): SManga {
+    // ==================== BUSCA (API REST) ====================
+    override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
+        val url = "$baseUrl/wp-json/wp/v2/posts".toHttpUrl().newBuilder()
+            .addQueryParameter("search", query.trim())
+            .addQueryParameter("per_page", "20")
+            .addQueryParameter("page", page.toString())
+            .build()
+        return parseListing(client.get(url.toString()))
+    }
+
+    override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
+        if (url.pathSegments.none { it.isNotBlank() }) return null
+        return fetchMangaUpdate(
+            SManga.create().apply { this.url = url.encodedPath },
+            emptyList(),
+            true,
+            false,
+        ).manga
+    }
+
+    // ==================== DETALHES + CAPÍTULOS (API REST) ====================
+    override suspend fun fetchMangaUpdate(
+        manga: SManga,
+        chapters: List<SChapter>,
+        fetchDetails: Boolean,
+        fetchChapters: Boolean,
+    ): SMangaUpdate {
+        val response = client.get(getMangaUrl(manga))
         val post = JSONObject(response.body.string())
+
+        val contentHtml = post.getJSONObject("content").getString("rendered")
+
+        // Trava extra: Se tentar abrir direto o post, também bloqueia.
+        if (isTeaserPost(contentHtml)) {
+            throw Exception("PirataHQ: Post com redirecionamento externo (Teaser) — ignorado")
+        }
+
         val title = Jsoup.parse(post.getJSONObject("title").getString("rendered")).text()
         val thumb = post.optString("jetpack_featured_media_url", "").ifEmpty {
-            val content = post.getJSONObject("content").getString("rendered")
-            val doc = Jsoup.parse(content)
+            val doc = Jsoup.parse(contentHtml)
             doc.selectFirst("img")?.let { extractImageUrl(it) } ?: ""
         }
         val description = Jsoup.parse(post.getJSONObject("excerpt").getString("rendered")).text().trim()
 
-        return SManga.create().apply {
+        val updated = SManga.create().apply {
+            this.url = manga.url
             this.title = title
             this.thumbnail_url = thumb
             this.description = description
             this.status = SManga.COMPLETED
             this.genre = ""
             this.author = ""
-            update_strategy = UpdateStrategy.ALWAYS_UPDATE
+            this.update_strategy = UpdateStrategy.ALWAYS_UPDATE
         }
-    }
 
-    // ==================== CAPÍTULOS (API REST) ====================
-    override fun chapterListParse(response: Response): List<SChapter> {
-        val basePath = response.request.url.toString().removePrefix(baseUrl)
-        return listOf(
-            SChapter.create().apply {
-                name = "Capítulo Único"
-                chapter_number = 1f
-                setUrlWithoutDomain(basePath)
-            },
-        )
+        val chapterList = if (fetchChapters) {
+            listOf(
+                SChapter.create().apply {
+                    name = "Capítulo Único"
+                    chapter_number = 1f
+                    this.url = manga.url
+                },
+            )
+        } else {
+            emptyList()
+        }
+
+        return SMangaUpdate(updated, chapterList)
     }
 
     // ==================== PÁGINAS (API REST) ====================
-    override fun pageListParse(response: Response): List<Page> {
+    override suspend fun getPageList(chapter: SChapter): List<Page> {
+        val response = client.get(getChapterUrl(chapter))
         val post = JSONObject(response.body.string())
         val contentHtml = post.getJSONObject("content").getString("rendered")
         val doc = Jsoup.parse(contentHtml)
 
+        // Pega todas as imagens
         val images = doc.select("img")
         val pages = mutableListOf<Page>()
         var index = 0
 
         images.forEach { img ->
             val src = extractImageUrl(img)
-            if (src.isNotEmpty() && !src.startsWith("data:image")) {
+
+            // Filtro extra: Ignora a imagem de banner (se o nome do arquivo ou o alt indicar redirecionamento)
+            val alt = img.attr("alt").lowercase()
+            val isBanner = src.lowercase().contains("completo") || src.lowercase().contains("publicidade") ||
+                src.lowercase().contains("site-oficial") || src.lowercase().contains("banner") ||
+                alt.contains("completo") || alt.contains("site oficial")
+
+            if (src.isNotEmpty() && !src.startsWith("data:image") && !isBanner) {
                 pages.add(Page(index++, url = baseUrl, imageUrl = src))
             }
         }
@@ -178,12 +252,16 @@ class PirataHq(
         return pages
     }
 
-    override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
+    // ==================== IMAGEM ====================
+    override fun imageRequest(page: Page): Request = Request.Builder()
+        .url(page.imageUrl!!)
+        .header("Referer", page.url)
+        .header("User-Agent", UA)
+        .build()
 
-    override fun imageRequest(page: Page): Request {
-        val newHeaders = headersBuilder()
-            .set("Referer", page.url)
-            .build()
-        return GET(page.imageUrl!!, newHeaders)
+    companion object {
+        private const val UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
     }
 }

@@ -1,41 +1,38 @@
 package eu.kanade.tachiyomi.extension.pt.hqerotico
 
-import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
+import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
-import eu.kanade.tachiyomi.source.online.HttpSource
-import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.annotation.Source
+import keiyoushi.network.get
 import keiyoushi.network.rateLimit
-import okhttp3.Headers
+import keiyoushi.source.KeiSource
+import keiyoushi.utils.asJsoup
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.Response
+import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import kotlin.time.Duration.Companion.seconds
 
 @Source
-class HqErotico(
-    override val lang: String = "pt-BR",
-    override val id: Long = 0L, // troque por um ID único na publicação
-) : HttpSource() {
+abstract class HqErotico : KeiSource() {
 
-    override val name = "HqErotico"
-    override val baseUrl = "https://hqerotico.com"
     override val supportsLatest = true
 
-    override val client: OkHttpClient = network.client.newBuilder()
-        .rateLimit(2, 1.seconds)
-        .build()
-
-    override fun headersBuilder(): Headers.Builder = Headers.Builder()
-        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
-        .add("Referer", "$baseUrl/")
+    override fun OkHttpClient.Builder.configureClient() = rateLimit(2, 1.seconds)
+        .addInterceptor { chain ->
+            val req = chain.request()
+            val builder = req.newBuilder()
+            if (req.header("User-Agent") == null) builder.header("User-Agent", UA)
+            if (req.header("Referer") == null) builder.header("Referer", "$baseUrl/")
+            chain.proceed(builder.build())
+        }
 
     // ==================== EXTRAÇÃO DE URL DE IMAGEM ====================
     private fun extractImageUrl(element: Element): String {
@@ -54,20 +51,14 @@ class HqErotico(
     }
 
     // ==================== LISTAGEM (SCRAPING) ====================
-    override fun popularMangaRequest(page: Int): Request {
-        val pageStr = if (page != 1) "page/$page/" else ""
-        return GET("$baseUrl/$pageStr", headers)
-    }
-
-    override fun popularMangaParse(response: Response): MangasPage {
-        val document = response.asJsoup()
+    private fun parseListing(document: Document): MangasPage {
         val items = document.select("div.thumb-conteudo")
 
         val mangas = items.mapNotNull { item ->
             val linkEl = item.selectFirst("a[href]") ?: return@mapNotNull null
             val href = linkEl.attr("abs:href")
 
-            // Filtro de anúncios: ignora links externos ou que contenham "ads"
+            // Filtro de anúncios: ignora links externos, /page/, fora do domínio ou cards de ads
             if (href.isEmpty() ||
                 href.contains("/page/") ||
                 !href.contains("hqerotico.com") ||
@@ -85,7 +76,7 @@ class HqErotico(
             SManga.create().apply {
                 this.title = title
                 this.thumbnail_url = thumb
-                setUrlWithoutDomain(href.removePrefix(baseUrl))
+                this.url = href.removePrefix(baseUrl)
             }
         }.distinctBy { it.url }
 
@@ -96,55 +87,79 @@ class HqErotico(
         return MangasPage(mangas, hasNextPage)
     }
 
-    override fun latestUpdatesRequest(page: Int): Request = popularMangaRequest(page)
-    override fun latestUpdatesParse(response: Response): MangasPage = popularMangaParse(response)
+    override suspend fun getPopularManga(page: Int): MangasPage {
+        val pageStr = if (page != 1) "page/$page/" else ""
+        val document = client.get("$baseUrl/$pageStr").asJsoup()
+        return parseListing(document)
+    }
+
+    override suspend fun getLatestUpdates(page: Int): MangasPage = getPopularManga(page)
 
     // ==================== BUSCA (SCRAPING) ====================
-    override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
+    override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage {
         val url = baseUrl.toHttpUrl().newBuilder().apply {
             if (query.isNotEmpty()) addQueryParameter("s", query)
             if (page > 1) addQueryParameter("paged", page.toString())
         }.build()
-        return GET(url, headers)
+        val document = client.get(url.toString()).asJsoup()
+        return parseListing(document)
     }
 
-    override fun searchMangaParse(response: Response): MangasPage = popularMangaParse(response)
+    override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
+        if (url.pathSegments.none { it.isNotBlank() }) return null
+        return fetchMangaUpdate(
+            SManga.create().apply { this.url = url.encodedPath },
+            emptyList(),
+            true,
+            false,
+        ).manga
+    }
 
-    // ==================== DETALHES (SCRAPING) ====================
-    override fun mangaDetailsParse(response: Response): SManga {
-        val document = response.asJsoup()
-        return SManga.create().apply {
-            title = document.selectFirst("h1.post-titulo, h1.entry-title, h1.pagina-titulo")?.text()?.trim()
+    // ==================== DETALHES + CAPÍTULOS (SCRAPING) ====================
+    override suspend fun fetchMangaUpdate(
+        manga: SManga,
+        chapters: List<SChapter>,
+        fetchDetails: Boolean,
+        fetchChapters: Boolean,
+    ): SMangaUpdate {
+        val document = client.get(getMangaUrl(manga)).asJsoup()
+
+        val updated = SManga.create().apply {
+            this.url = manga.url
+            this.title = document.selectFirst("h1.post-titulo, h1.entry-title, h1.pagina-titulo")?.text()?.trim()
                 ?: document.title()
-            author = document.selectFirst(".post-itens li:contains(Artista:) a, .post-itens li:contains(Tradutor:) a")?.text() ?: ""
-            genre = document.select("ul.post-itens a[rel='tag'], .post-itens li a[href*='/categoria/'], .post-itens li a[href*='/tag/']")
+            this.author = document.selectFirst(".post-itens li:contains(Artista:) a, .post-itens li:contains(Tradutor:) a")?.text() ?: ""
+            this.genre = document.select("ul.post-itens a[rel='tag'], .post-itens li a[href*='/categoria/'], .post-itens li a[href*='/tag/']")
                 .map { it.text() }.distinct().joinToString(", ")
-            description = document.selectFirst("meta[name='description']")?.attr("content")
+            this.description = document.selectFirst("meta[name='description']")?.attr("content")
                 ?: document.selectFirst("div.post-texto p")?.text()
                 ?: ""
-            status = SManga.COMPLETED
-            val mainImg = document.selectFirst("div.post-capa img, .entry-content img, article img")
-            thumbnail_url = mainImg?.let { extractImageUrl(it) } ?: ""
-            update_strategy = UpdateStrategy.ALWAYS_UPDATE
-        }
-    }
+            this.status = SManga.COMPLETED
 
-    // ==================== CAPÍTULOS (SCRAPING) ====================
-    override fun chapterListParse(response: Response): List<SChapter> {
-        val basePath = response.request.url.toString().removePrefix(baseUrl)
-        return listOf(
-            SChapter.create().apply {
-                name = "Capítulo Único"
-                chapter_number = 1f
-                setUrlWithoutDomain(basePath)
-            },
-        )
+            val mainImg = document.selectFirst("div.post-capa img, .entry-content img, article img")
+            this.thumbnail_url = mainImg?.let { extractImageUrl(it) } ?: ""
+            this.update_strategy = UpdateStrategy.ALWAYS_UPDATE
+        }
+
+        val chapterList = if (fetchChapters) {
+            listOf(
+                SChapter.create().apply {
+                    name = "Capítulo Único"
+                    chapter_number = 1f
+                    this.url = manga.url
+                },
+            )
+        } else {
+            emptyList()
+        }
+
+        return SMangaUpdate(updated, chapterList)
     }
 
     // ==================== PÁGINAS (SCRAPING) ====================
-    override fun pageListParse(response: Response): List<Page> {
-        val document = response.asJsoup()
-        val currentUrl = response.request.url.toString()
+    override suspend fun getPageList(chapter: SChapter): List<Page> {
+        val chapterUrl = getChapterUrl(chapter)
+        val document = client.get(chapterUrl).asJsoup()
 
         val selectors = listOf(
             "ul.post-fotos img", // principal (padrão dos sites da rede)
@@ -169,19 +184,23 @@ class HqErotico(
         images.forEach { img ->
             val src = extractImageUrl(img)
             if (src.isNotEmpty() && !src.startsWith("data:image")) {
-                pages.add(Page(index++, url = currentUrl, imageUrl = src))
+                pages.add(Page(index++, url = chapterUrl, imageUrl = src))
             }
         }
 
         return pages
     }
 
-    override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
+    // ==================== IMAGEM ====================
+    override fun imageRequest(page: Page): Request = Request.Builder()
+        .url(page.imageUrl!!)
+        .header("Referer", page.url)
+        .header("User-Agent", UA)
+        .build()
 
-    override fun imageRequest(page: Page): Request {
-        val newHeaders = headersBuilder()
-            .set("Referer", page.url)
-            .build()
-        return GET(page.imageUrl!!, newHeaders)
+    companion object {
+        private const val UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
     }
 }
