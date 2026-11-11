@@ -129,6 +129,16 @@
       "sha256": "9764b5a1bc8f732e590785d96b6c554280352ffc1789c442e679ab797bfe1f7a"
     }
   },
+  "eu.kanade.tachiyomi.extension.pt.hentaimilf": {
+    "apk": {
+      "name": "tachiyomi-pt.hentaimilf-v1.6.1.apk",
+      "sha256": "ad262b40b65be04ed6082a0ed3b589038b40f464a78626846fabe35a7ecfef0b"
+    },
+    "jar": {
+      "name": "tachiyomi-pt.hentaimilf-v1.6.1.jar",
+      "sha256": "feeabd61dd2bef416abcf6887f8ebc7582a3c5cc39789a1f8b9da7bedb30692c"
+    }
+  },
   "eu.kanade.tachiyomi.extension.pt.hentaiputa": {
     "apk": {
       "name": "tachiyomi-pt.hentaiputa-v1.6.2.apk",
@@ -357,6 +367,16 @@
     "jar": {
       "name": "tachiyomi-pt.piratahq-v1.6.2.jar",
       "sha256": "af97809ed7daf0c94e3371901c876acc635e2ec894d995b4370c028f8db2522f"
+    }
+  },
+  "eu.kanade.tachiyomi.extension.pt.pornojapa": {
+    "apk": {
+      "name": "tachiyomi-pt.pornojapa-v1.6.1.apk",
+      "sha256": "8831fce50887912be02f03abe9e612079f3519744f3d3a3b6c6020e9730bfd01"
+    },
+    "jar": {
+      "name": "tachiyomi-pt.pornojapa-v1.6.1.jar",
+      "sha256": "4b5cfececa2c4dd3a1fcfefa71111e5031d68c1076448b09b1090b79eb3a3c70"
     }
   },
   "eu.kanade.tachiyomi.extension.pt.quadrinhosdesexo": {
