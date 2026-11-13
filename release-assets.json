@@ -299,6 +299,16 @@
       "sha256": "57f5c0b8f441986e4f056561f604bfdbea947a4ef021b5a8b722a41a47e8fe6c"
     }
   },
+  "eu.kanade.tachiyomi.extension.pt.melhorhentai": {
+    "apk": {
+      "name": "tachiyomi-pt.melhorhentai-v1.6.1.apk",
+      "sha256": "f9b2071a396e3b26add3ae4f0d64e4dc10906c1539d86f6fe4a5a91590b3dcf3"
+    },
+    "jar": {
+      "name": "tachiyomi-pt.melhorhentai-v1.6.1.jar",
+      "sha256": "ccd0dd8678191c93e229a513a4fc23e91db67a42ae8f3016123caafbb8ddfee8"
+    }
+  },
   "eu.kanade.tachiyomi.extension.pt.meuhentai": {
     "apk": {
       "name": "tachiyomi-pt.meuhentai-v1.6.2.apk",
