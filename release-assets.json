@@ -249,6 +249,16 @@
       "sha256": "9ec682c8cfac936f831c9cb166be3bf4f7de64939cd0d1295a611122fb2e54a1"
     }
   },
+  "eu.kanade.tachiyomi.extension.pt.hqbrasa": {
+    "apk": {
+      "name": "tachiyomi-pt.hqbrasa-v1.6.1.apk",
+      "sha256": "3604e6a9d8ee132820f833136b66540b80d946c39769f11e940a60e08eacc8d9"
+    },
+    "jar": {
+      "name": "tachiyomi-pt.hqbrasa-v1.6.1.jar",
+      "sha256": "9a632ab968d90b828cbaef09cb76ab0be3e14b6a3b92e1e5cbef3a27b7c229df"
+    }
+  },
   "eu.kanade.tachiyomi.extension.pt.hqerotica": {
     "apk": {
       "name": "tachiyomi-pt.hqerotica-v1.6.2.apk",
